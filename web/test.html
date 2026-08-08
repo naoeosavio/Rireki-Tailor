@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Diagnóstico LaTeX (RirekiTailor)</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2em; background: #14161a; color: #dfe3e8; }
+  h1 { font-size: 1.2em; }
+  pre { background: #1d2126; padding: 1em; border-radius: 6px; overflow: auto; max-height: 40vh; font-size: 12px; white-space: pre-wrap; }
+  #status { font-weight: bold; }
+  #viewer { width: 100%; height: 70vh; border: 1px solid #333; }
+  button { padding: 8px 16px; margin: 4px; }
+  .ok { color: #7ee787; } .err { color: #ff7b72; }
+</style>
+</head>
+<body>
+<h1>Diagnóstico LaTeX</h1>
+<p>Status: <span id="status">carregando engine…</span></p>
+<button id="btn-compile">Compilar CV_ATS.tex</button>
+<button id="btn-format">Compilar formato (pdflatex.fmt)</button>
+<p id="meta"></p>
+<pre id="log">—</pre>
+<iframe id="viewer" style="display:none"></iframe>
+
+<script src="vendor/swiftlatex/PdfTeXEngine.js"></script>
+<script>
+(function () {
+  const Orig = window.Worker;
+  window.Worker = function (...args) {
+    const w = new Orig(...args);
+    w.addEventListener('error', (e) => {
+      console.log('WORKER-ERROR:', e.message, '@', e.filename, e.lineno);
+    });
+    w.addEventListener('messageerror', (e) => console.log('WORKER-MESSAGEERROR:', e));
+    return w;
+  };
+})();
+</script>
+<script>
+const engine = new PdfTeXEngine();
+const logEl = document.getElementById('log');
+const statusEl = document.getElementById('status');
+const metaEl = document.getElementById('meta');
+const viewer = document.getElementById('viewer');
+
+function setStatus(txt, cls) {
+  statusEl.textContent = txt;
+  statusEl.className = cls || '';
+}
+function log(...lines) {
+  logEl.textContent += lines.join('\n') + '\n';
+  console.log(...lines);
+}
+function showPdf(uint8) {
+  const blob = new Blob([uint8], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  viewer.style.display = 'block';
+  viewer.src = url;
+  metaEl.textContent = `PDF gerado: ${uint8.length} bytes`;
+}
+
+async function loadCvTex() {
+  const r = await fetch('data/CV_ATS.tex');
+  return await r.text();
+}
+
+async function compileCv() {
+  setStatus('compilando…');
+  log('--- compile start ---');
+  const tex = await loadCvTex();
+  engine.writeMemFSFile('main.tex', tex);
+  engine.setEngineMainFile('main.tex');
+  const res = await engine.compileLaTeX();
+  log('status:', res.status);
+  if (res.status === 0) {
+    setStatus('OK: compilou', 'ok');
+    showPdf(res.pdf);
+  } else {
+    setStatus(`ERRO: status ${res.status}`, 'err');
+    log(res.log);
+  }
+}
+
+async function compileFormat() {
+  setStatus('compilando formato (primeira vez ~5min)…');
+  try {
+    const fmtBytes = await new Promise((resolve, reject) => {
+      engine.latexWorker.onmessage = (ev) => {
+        const data = ev.data;
+        if (data.cmd !== 'compile') return;
+        engine.latexWorkerStatus = 2;
+        if (data.result === 'ok') resolve(data.pdf);
+        else reject(data.log);
+      };
+      engine.latexWorker.postMessage({ cmd: 'compileformat' });
+    });
+    log('compileFormat resolve:', fmtBytes === undefined ? 'UNDEFINED' : fmtBytes.constructor.name + ' len=' + fmtBytes.length);
+    setStatus('OK: formato compilado no wasm', 'ok');
+    const r = await fetch('/api/upload-fmt', { method: 'POST', body: fmtBytes });
+    log('upload fmt:', r.status, await r.text());
+  } catch (e) {
+    setStatus('ERRO formato', 'err');
+    log(String(e));
+  }
+}
+
+document.getElementById('btn-compile').addEventListener('click', compileCv);
+document.getElementById('btn-format').addEventListener('click', compileFormat);
+
+window.addEventListener('error', (e) => log('window error:', e.message, e.filename, e.lineno));
+window.addEventListener('unhandledrejection', (e) => log('unhandled rejection:', String(e.reason)));
+
+engine.loadEngine().then(() => {
+  setStatus('engine pronto', 'ok');
+  log('engine loaded');
+  const params = new URLSearchParams(location.search);
+  if (params.get('autostart') === 'format') {
+    setTimeout(compileFormat, 300);
+  } else if (params.get('autostart') === 'compile') {
+    setTimeout(compileCv, 300);
+  }
+}).catch((e) => {
+  setStatus('falha ao carregar engine', 'err');
+  log('loadEngine error:', e);
+});
+</script>
+</body>
+</html>
