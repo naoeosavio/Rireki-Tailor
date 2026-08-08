@@ -1,0 +1,211 @@
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[a4paper,margin=1.35cm]{geometry}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{fontawesome5}
+\usepackage{ragged2e}
+\usepackage{titlesec}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlist[itemize]{leftmargin=1.5em,nosep}
+
+% Lightweight replacements for the commands supplied by maltacv.cls.
+\definecolor{primary}{HTML}{252525}
+\definecolor{accent_body}{HTML}{D95D39}
+\newcommand{\setcolorscheme}[1]{}
+\newcommand{\itemmarker}{\textbullet}
+\newcommand{\cvsection}[1]{%
+  \par\medskip{\Large\bfseries\color{primary}#1}\par
+  \vspace{1pt}{\color{accent_body}\hrule height 1.2pt}\smallskip}
+\newcommand{\cvsubsection}[1]{\par\smallskip{\large\bfseries\color{primary}#1}\par}
+\newcommand{\cvlistitem}[2]{%
+  \par\hangindent=1.1em\hangafter=1\makebox[1.1em][l]{\color{accent_body}\itemmarker}%
+  \textbf{#1}\if\relax\detokenize{#2}\relax\else\enspace#2\fi\par}
+\newcommand{\cvuniversity}[4]{%
+  \textbf{#1}\hfill{\color{accent_body}#3}\par
+  \textit{#2}\if\relax\detokenize{#4}\relax\else\hfill#4\fi\par}
+\newcommand{\cvexperience}[5]{%
+  \textbf{#1}\hfill{\color{accent_body}#3}\par
+  \textit{#2}\hfill#4\par
+  \if\relax\detokenize{#5}\relax\else{\small #5}\par\fi}
+\newcommand{\divider}{\par\smallskip{\color{gray!55}\hrule}\smallskip}
+
+\newcommand{\cvname}{}
+\newcommand{\cvfirstname}{}
+\newcommand{\cvfamilyname}{}
+\newcommand{\cvtagline}{}
+\newcommand{\cvbio}{}
+\newcommand{\cvpersonalinfo}{}
+\newcommand{\name}[1]{\renewcommand{\cvname}{#1}}
+\newcommand{\firstname}[1]{\renewcommand{\cvfirstname}{#1}}
+\newcommand{\familyname}[1]{\renewcommand{\cvfamilyname}{#1}}
+\newcommand{\tagline}[1]{\renewcommand{\cvtagline}{#1}}
+\newcommand{\bio}[1]{\renewcommand{\cvbio}{#1}}
+\newcommand{\personalinfo}[1]{\renewcommand{\cvpersonalinfo}{#1}}
+\newcommand{\email}[1]{\href{mailto:#1}{\faEnvelope\enspace#1}\quad}
+\newcommand{\linkedin}[1]{\faLinkedin\enspace#1\quad}
+\newcommand{\github}[1]{\faGithub\enspace#1\quad}
+\newcommand{\phone}[1]{\faPhone\enspace#1\quad}
+\newcommand{\homepage}[1]{\faGlobe\enspace#1\quad}
+\newcommand{\twitter}[1]{\faTwitter\enspace#1\quad}
+\newcommand{\birthday}[1]{\faBirthdayCake\enspace#1\quad}
+\newcommand{\mailaddress}[1]{\faEnvelopeOpen\enspace#1\quad}
+\newcommand{\location}[1]{\faMapMarker*\enspace#1\quad}
+\newcommand{\makecvheader}{%
+  {\Huge\bfseries\color{primary}\cvname}\par
+  {\large\color{accent_body}\cvtagline}\smallskip\par
+  {\small\cvpersonalinfo}\medskip\par
+  \cvbio\par\medskip}
+
+%% AltaCV uses the fontawesome and academicon fonts
+%% and packages.
+%% See texdoc.net/pkg/fontawecome and http://texdoc.net/pkg/academicons for full list of symbols. You MUST compile with XeLaTeX or LuaLaTeX if you want to use academicons.
+
+% Change the font if you want to
+% If using pdflatex:
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+% \usepackage[default]{lato}
+\usepackage{tgheros}
+\renewcommand*\familydefault{\sfdefault} %% Only if the base font of the document is to be sans serif
+
+\usepackage{setspace}
+
+\usepackage{mathpazo}
+\usepackage{textcomp}
+\usepackage{multicol}
+
+% Color schemes:
+% raisinblack_flame
+% darkpurple_princetonorange
+% blue_claret
+% eerieblack_eggplant
+% outerspace_forestgreen   
+% raisinblack_midnightgreen
+% teal_brown
+% indigo
+% blue
+% violet
+% you can set your custom colors with:
+% \definecolor{AccentBody}{HTML}{002642}
+% \definecolor{Primary}{HTML}{840032}
+% \colorlet{primary}{Primary}
+% \colorlet{accent_body}{AccentBody}
+
+% this is my favourite but change it as you like
+\setcolorscheme{raisinblack_flame}
+\setlength\multicolsep{0pt}
+
+% Change the bullets for itemize and rating marker
+% for \cvskill if you want to
+\renewcommand{\itemmarker}{{\small\textbullet}}
+
+%% sample.bib contains your publications
+%% NOT SUPPORTED YET
+% \addbibresource{sample.bib}
+
+\name{Sávio Mendes}
+\firstname{Sávio}
+\familyname{Mendes}
+
+\begin{document}
+\tagline{Desenvolvedor Fullstack Sênior}
+\personalinfo{%
+  \email{savioscmendes@gmail.com}
+  \linkedin{linkedin.com/in/savioscmendes}
+  \github{github.com/naoeosavio}
+  \location{São Luís, MA, Brasil}
+}
+
+\bio{Engenheiro de Software Sênior com sólida experiência no desenvolvimento de aplicações escaláveis utilizando TypeScript, Node.js e React, com foco em sistemas de alta performance, arquitetura orientada a eventos e soluções para o mercado financeiro.
+
+Atuei na construção de plataformas complexas envolvendo microsserviços, processamento assíncrono, testes automatizados e integração de APIs, combinando engenharia backend robusta com interfaces frontend dinâmicas e modernas.
+
+Busco atuar em projetos desafiadores no desenvolvimento fullstack, aplicando boas práticas de arquitetura, qualidade de código e testes automatizados.
+
+Core areas:
+\begin{itemize}
+    \item Desenvolvimento Full Stack com React, TypeScript e Node.js
+    \item Arquitetura de Microsserviços e Sistemas Orientados a Eventos
+    \item Testes Automatizados e Garantia de Qualidade de Código
+    \item Integração de Sistemas e Aplicações do Mercado Financeiro
+\end{itemize}}
+
+\makecvheader
+
+\cvsection{Competências Técnicas}
+\begin{center}
+  \begin{multicols}{2}
+    \cvlistitem{Linguagens}{TypeScript, JavaScript, Python, SQL, Bash}
+    \cvlistitem{Frameworks}{Node.js, Express, Fastify, React, React Native, Vitest, Biome, tsup, Vite}
+    \cvlistitem{Backend}{APIs REST, WebSocket, Microsserviços, Arquitetura Orientada a Eventos, Processamento Assíncrono, Agendamento de Tarefas}
+    \cvlistitem{Frontend}{React, React Native, HTML5, CSS3, Tailwind CSS, Single Page Applications (SPA)}
+    \cvlistitem{Sistemas \& DevOps}{Docker, Docker Compose, Linux, Git, GitHub, GitHub Actions, CI/CD, Máquinas de Estado (FSM)}
+    \cvlistitem{Infraestrutura}{PostgreSQL, SQLite, Redis, Nginx, VPS, Docker, WebSockets}
+  \end{multicols}
+\end{center}
+
+\medskip
+\cvsection{Experiência}
+
+\cvexperience{Engenheiro de Software}{Projetos Independentes}{Maio de 2025 -- Atual}{Remoto}{TypeScript, Node.js, Express, React, Docker, WebSocket, FSM, Arquitetura Orientada a Eventos, Vitest}
+\begin{itemize}
+  \item Desenvolvi a plataforma \textbf{Arbiter Quant}, integrando APIs REST e WebSockets da Binance para execução automatizada de estratégias no mercado financeiro.
+  \item Projetei arquitetura orientada a eventos com Máquinas de Estado (FSM) para controle de fluxo e recuperação automática de falhas.
+  \item Implementei testes automatizados e utilizei Docker para containerização e garantia de ambientes de desenvolvimento reproduzíveis.
+\end{itemize}
+
+\divider
+
+\cvexperience{Desenvolvedor Full Stack}{UwU Games}{Outubro de 2023 -- Setembro de 2024}{Remoto}{TypeScript, React, React Native, WebSocket, Programação Funcional, Microsserviços}
+\begin{itemize}
+  \item Desenvolvi sistemas em tempo real utilizando WebSockets para comunicação assíncrona e arquitetura orientada a eventos.
+  \item Implementei lógicas complexas e bibliotecas reutilizáveis em TypeScript para aplicações web e mobile.
+  \item Participei do desenvolvimento de protótipos e interfaces dinâmicas utilizando React e React Native.
+  \item Contribuí para a arquitetura de microsserviços e componentes escaláveis com foco em desempenho.
+\end{itemize}
+
+\divider
+
+\cvexperience{Engenheiro de Software}{Higher Order Company}{Maio de 2023 -- Março de 2025}{Remoto}{TypeScript, Rust, C, Git, CI/CD, Documentação Técnica}
+\begin{itemize}
+  \item Contribuí para o desenvolvimento de infraestruturas de compiladores e ferramentas para desenvolvedores utilizando TypeScript, Rust e C.
+  \item Realizei testes de regressão e validação de desempenho para garantir a estabilidade de sistemas distribuídos.
+  \item Liderei iniciativas de documentação técnica e automação de processos de build e release.
+\end{itemize}
+
+\divider
+
+\cvsection{Projetos}
+
+\cvlistitem{Arbiter Quant --- Plataforma de Trading}{TypeScript, Node.js, Express, WebSocket, Docker, FSM \\ Plataforma de trading algorítmico para Binance com arquitetura orientada a eventos, processamento em tempo real e dashboard web.}
+
+\cvlistitem{Fixed Precision --- Biblioteca de Aritmética}{TypeScript, BigInt, Vitest, tsup, Biome \\ Biblioteca determinística de alta precisão baseada em BigInt com suíte completa de testes automatizados para sistemas financeiros.}
+
+
+\cvsection{Educação}
+\medskip
+\begin{multicols}{2}
+  \cvuniversity{Bacharelado em Ciência da Computação}{Faculdade Pitágoras}{2017 -- 2021}{}
+  \columnbreak
+  \vfill\null
+\end{multicols}
+
+
+\medskip
+\cvsection{Idiomas}
+\medskip
+
+\begin{multicols}{3}
+  \cvlistitem{Português}{Nativo}
+  \columnbreak
+  
+  \cvlistitem{Inglês}{B1}
+  \columnbreak
+  
+  \vfill\null
+\end{multicols}
+
+\end{document}
