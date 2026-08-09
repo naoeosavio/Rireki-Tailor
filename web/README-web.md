@@ -30,12 +30,37 @@ resposta com header `fileid: <basename>` (o arquivo vai para `/tex/<fileid>` no 
 
 | Arquivo | Papel |
 |---|---|
+| `index.html` | **App principal** — seções por vaga + stepper 3 etapas + PDF viewer. |
+| `js/app.js` | Estado, seções (workspaces por vaga), auto-save (localStorage), LLM, engine. |
+| `js/prompts.js` | Prompts ATS/cover/tex (idênticos ao CLI; ATS carrega `data/PROMPT_ATS.md`). |
+| `js/llm.js` | Chat completions OpenAI-compatible direto do browser (baseURL/model/key configuráveis, streaming). |
+| `css/app.css` | Tema dark. |
 | `vendor/swiftlatex/` | Engine vendored. Patches: endpoint texlive → origin local; `ENGINE_PATH` via `document.currentScript`; `compileFormat` devolvendo os bytes (Uint8Array) do fmt. |
 | `scripts/serve.js` | Dev server + resolvedor kpathsea (ordem `TEX_SUBROOTS` e `TEXMF_DIRS` como o TeXLive), `fix_extension` (ids → extensões), header `fileid`, 301 para MISS, espelho em `web/pdftex/`, `POST /api/upload-fmt`. |
 | `test.html` | Harness de diagnóstico: carrega o engine, compila `data/CV_ATS.tex`, reconstrói o formato. `?autostart=format` / `?autostart=compile`. |
+| `scripts/smoke.js` / `e2e.js` | Playwright: UI (seções, persistência, export) e compile completo do PDF. |
 | `scripts/bootstrap.js` | Playwright: fluxo completo headless (build do fmt + compile) — usado para popular o espelho. |
 | `scripts/probe.js` / `verify.js` | Diagnóstico: compile headless com logs do servidor / verificação do PDF gerado. |
 | `pdftex/` | **Espelho estático** (bootstrap concluído): 82 arquivos, 34 MB — inclui `10/swiftlatexpdftex.fmt` (22 MB, built via wasm, magic `XT2W`). |
+| `task.md` | Checklist de progresso do projeto web. |
+
+## Fluxo do app (3 etapas)
+
+1. **Entradas** — descrição da vaga, CV master (toggle EN/PT), template LaTeX e pitch opcional,
+   com upload de arquivo e botões "↺ padrão" (restaura `data/`). **Gerar CV_OUT.md** e **cover.md**
+   via LLM (streaming no textarea).
+2. **Markdown** — editar/baixar CV_OUT.md e cover.md. **Converter para LaTeX** → CV.tex
+   (mesmo prompt do `gen-pdf`: extrai o skeleton do template e preenche com o CV).
+3. **LaTeX → PDF** — editar o CV.tex (ou fazer upload de um .tex pronto, pulando o LLM),
+   **Compilar PDF** no engine wasm → viewer + download.
+
+### Seções (workspaces por vaga)
+
+- Cada seção guarda snapshot próprio: vaga, master, template, pitch, cvOut, cover, tex.
+- **+ Nova seção** herda master + template da seção atual; tudo auto-salvo em localStorage.
+- Exportar/importar seções como JSON (`riki-secoes-*.json`).
+- Config LLM (baseURL/model/key) é **global** e fica no localStorage do browser —
+  compatível com qualquer endpoint OpenAI-compatible com CORS (OpenAI, OpenRouter, Groq, DeepSeek…).
 
 ### IDs de formato kpathsea relevantes
 `3` tfm · `4` afm · `10` fmt · `11` fontmap (.map) · `26` tex · `32` type1 (.pfa) ·
@@ -45,11 +70,16 @@ resposta com header `fileid: <basename>` (o arquivo vai para `/tex/<fileid>` no 
 
 ```bash
 # desenvolvimento (resolve qualquer arquivo do TeXLive + espelha):
-node web/scripts/serve.js --port 8080        # → http://localhost:8080/test.html
+node web/scripts/serve.js --port 8080        # → http://localhost:8080/  (app) /test.html (diagnóstico)
 
-# re-popular o espelho / validar o pipeline headless (Playwright):
-NODE_PATH=$(npm root -g) node web/scripts/verify.js   # status + header do PDF
+# validação headless (Playwright, channel chromium):
+NODE_PATH=$(npm root -g) node web/scripts/smoke.js   # UI: seções, persistência, export
+NODE_PATH=$(npm root -g) node web/scripts/e2e.js     # compile completo → assert %PDF-1.5
 ```
+
+- **Compile é rápido (~2 s):** o espelho `web/pdftex/` + índices em memória eliminam os
+  walks de TeXMF; a 1ª compilação em servidor frio é que demora (walks ~20 min).
+  Em hosting estático (só o espelho), é instantâneo.
 
 - O formato (`pdflatex.fmt`) já está em `web/pdftex/10/swiftlatexpdftex.fmt`; se apagado,
   `test.html?autostart=format` o reconstrói no wasm (~5 min) e faz upload via `POST /api/upload-fmt`.
@@ -68,5 +98,6 @@ NODE_PATH=$(npm root -g) node web/scripts/verify.js   # status + header do PDF
 
 ## Próximos passos
 
-1. App real (`index.html` + editor: editar `CV_ATS.tex` → compilar → PDF + log).
-2. Remover `scripts/probe.js` quando o app substituir o harness.
+1. Testar a geração LLM real (ATS + cover + tex) com uma chave própria no painel "LLM".
+2. Remover `scripts/probe.js` quando o harness deixar de ser necessário.
+3. Publicar em hosting estático (todo o `web/` já é self-contained).

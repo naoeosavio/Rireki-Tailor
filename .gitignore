@@ -1,0 +1,7 @@
+.env
+*.log
+out/
+temp/
+__pycache__/
+.DS_Store
+Fullstack
