@@ -155,18 +155,29 @@
   RirekiTailor — compilação LaTeX no browser (SwiftLaTeX wasm)
 </footer>
 
-<!-- Config LLM (painel simples) -->
+<!-- Config LLM (tell-ai sdk — OpenAI-compatible multi-vendor) -->
 <details id="cfg-panel">
-  <summary>Configuração LLM (OpenAI-compatible)</summary>
-  <label>Base URL <input id="cfg-base" placeholder="https://api.openai.com/v1"></label>
-  <label>Model <input id="cfg-model" placeholder="gpt-4o-mini"></label>
-  <label>API Key <input id="cfg-key" type="password" placeholder="sk-… (fica no seu browser)"></label>
-  <label>Temperature <input id="cfg-temp" type="number" step="0.1" min="0" max="2"></label>
+  <summary>Configuração LLM (tell-ai sdk)</summary>
+  <label>Model <input id="cfg-model" placeholder="j (alias) ou vendor:model:thinking"></label>
+  <p class="hint">Aliases: g (openai gpt-5.6-sol), j (google gemini-3.5-flash-lite), s (anthropic claude-sonnet-5), d (deepseek deepseek-v4-flash), x (xai grok-4.5), z (fireworks glm), K (moonshot kimi), c (openai luna)… Spec completo também aceito: <code>vendor:model:thinking</code>.</p>
+  <div class="vendors">
+    <div class="vendor-row"><span>openai</span><input id="cfg-key-openai" type="password" placeholder="key"><input id="cfg-url-openai" placeholder="base url (CORS proxy)"></div>
+    <div class="vendor-row"><span>anthropic</span><input id="cfg-key-anthropic" type="password" placeholder="key"><input id="cfg-url-anthropic" placeholder="base url (CORS proxy)"></div>
+    <div class="vendor-row"><span>google</span><input id="cfg-key-google" type="password" placeholder="key"><input id="cfg-url-google" placeholder="base url (CORS proxy)"></div>
+    <div class="vendor-row"><span>deepseek</span><input id="cfg-key-deepseek" type="password" placeholder="key"><input id="cfg-url-deepseek" placeholder="base url (CORS proxy)"></div>
+    <div class="vendor-row"><span>xai</span><input id="cfg-key-xai" type="password" placeholder="key"><input id="cfg-url-xai" placeholder="base url (CORS proxy)"></div>
+    <div class="vendor-row"><span>cerebras</span><input id="cfg-key-cerebras" type="password" placeholder="key"><input id="cfg-url-cerebras" placeholder="base url (CORS proxy)"></div>
+    <div class="vendor-row"><span>fireworks</span><input id="cfg-key-fireworks" type="password" placeholder="key"><input id="cfg-url-fireworks" placeholder="base url (CORS proxy)"></div>
+    <div class="vendor-row"><span>moonshotai</span><input id="cfg-key-moonshotai" type="password" placeholder="key"><input id="cfg-url-moonshotai" placeholder="base url (CORS proxy)"></div>
+    <div class="vendor-row"><span>openrouter</span><input id="cfg-key-openrouter" type="password" placeholder="key"><input id="cfg-url-openrouter" placeholder="base url (CORS proxy)"></div>
+  </div>
   <button id="btn-cfg-test">Testar conexão</button>
-  <p class="hint">Compatível com OpenAI, OpenRouter, Groq, DeepSeek etc. (qualquer endpoint com CORS). A key fica no localStorage do seu navegador.</p>
+  <p class="hint">Keys e URLs ficam no localStorage do seu navegador (chave do vendor usado pelo model; URLs servem p/ CORS proxy se o provedor não liberar o browser).</p>
 </details>
 
 <script src="vendor/swiftlatex/PdfTeXEngine.js"></script>
+<script src="vendor/tell/node-shims.js"></script>
+<script src="vendor/tell/tell.bundle.js"></script>
 <script src="js/prompts.js"></script>
 <script src="js/llm.js"></script>
 <script src="js/app.js"></script>

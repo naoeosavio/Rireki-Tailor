@@ -1,81 +1,39 @@
-// LLM wrapper — OpenAI-compatible chat completions, direto do browser.
-// baseURL/model/key configuráveis no app; key fica no localStorage.
+// LLM layer — tell-ai SDK (TellSDK.tell), OpenAI-compatible multi-vendor.
+// Config: model alias/spec + keys/urls per vendor (localStorage, via app config).
 
-async function llmChat(cfg, userPrompt, { onToken } = {}) {
-  if (!cfg.apiKey) throw new Error('Config LLM incompleta: informe a API key.');
-  const base = (cfg.baseURL || 'https://api.openai.com/v1').replace(/\/+$/, '');
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 600000);
-  try {
-    const body = {
-      model: cfg.model || 'gpt-4o-mini',
-      messages: [{ role: 'user', content: userPrompt }],
-      temperature: cfg.temperature ?? 0.7,
-    };
-    if (onToken) {
-      body.stream = true;
-      let acc = '';
-      const r = await fetch(base + '/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + cfg.apiKey,
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      if (!r.ok) throw new Error('LLM HTTP ' + r.status + ': ' + (await r.text()).slice(0, 300));
-      const reader = r.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop();
-        for (const line of lines) {
-          const t = line.trim();
-          if (!t.startsWith('data:')) continue;
-          const payload = t.slice(5).trim();
-          if (payload === '[DONE]') continue;
-          try {
-            const json = JSON.parse(payload);
-            const delta = json.choices && json.choices[0] && json.choices[0].delta;
-            if (delta && delta.content) {
-              acc += delta.content;
-              onToken(delta.content);
-            }
-          } catch (_) { /* chunk incompleto */ }
-        }
-      }
-      return acc;
-    }
-    const r = await fetch(base + '/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + cfg.apiKey,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    if (!r.ok) throw new Error('LLM HTTP ' + r.status + ': ' + (await r.text()).slice(0, 300));
-    const json = await r.json();
-    return json.choices && json.choices[0] && json.choices[0].message
-      ? json.choices[0].message.content
-      : '';
-  } finally {
-    clearTimeout(timer);
-  }
+const LLM_VENDORS = [
+  'openai', 'anthropic', 'google', 'deepseek', 'xai',
+  'cerebras', 'fireworks', 'moonshotai', 'openrouter',
+];
+
+function tellCfg(config) {
+  const keys = {};
+  const urls = {};
+  LLM_VENDORS.forEach((v) => {
+    if (config.keys && config.keys[v]) keys[v] = config.keys[v];
+    if (config.urls && config.urls[v]) urls[v] = config.urls[v];
+  });
+  return { model: config.model || 'g', keys, urls };
 }
 
-async function llmTest(cfg) {
-  if (!cfg.apiKey) throw new Error('Informe a API key.');
-  const base = (cfg.baseURL || 'https://api.openai.com/v1').replace(/\/+$/, '');
-  const r = await fetch(base + '/models', {
-    headers: { Authorization: 'Bearer ' + cfg.apiKey },
+async function tellChat(userPrompt, config) {
+  const sdk = window.TellSDK;
+  if (!sdk || typeof sdk.tell !== 'function') {
+    throw new Error('TellSDK não carregado (vendor/tell/tell.bundle.js).');
+  }
+  const cfg = tellCfg(config);
+  if (!Object.values(cfg.keys).some(Boolean)) {
+    throw new Error('Config LLM incompleta: informe a API key do vendor do modelo (' + cfg.model + ').');
+  }
+  return await sdk.tell(userPrompt, {
+    model: cfg.model,
+    keys: cfg.keys,
+    urls: cfg.urls,
+    platform: 'web browser',
   });
-  if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + (await r.text()).slice(0, 200));
-  return 'OK — ' + (await r.json()).data.length + ' modelos disponíveis';
+}
+
+async function llmTest(config) {
+  const out = await tellChat('Reply with exactly: OK', config);
+  return 'OK — modelo respondeu: "' + out.trim().slice(0, 60) + '"';
 }

@@ -33,7 +33,8 @@ resposta com header `fileid: <basename>` (o arquivo vai para `/tex/<fileid>` no 
 | `index.html` | **App principal** — seções por vaga + stepper 3 etapas + PDF viewer. |
 | `js/app.js` | Estado, seções (workspaces por vaga), auto-save (localStorage), LLM, engine. |
 | `js/prompts.js` | Prompts ATS/cover/tex (idênticos ao CLI; ATS carrega `data/PROMPT_ATS.md`). |
-| `js/llm.js` | Chat completions OpenAI-compatible direto do browser (baseURL/model/key configuráveis, streaming). |
+| `js/llm.js` | Camada LLM via **tell-ai sdk** (`TellSDK.tell`): model alias/spec + keys/urls por vendor, migração de config antigo, teste de conexão. |
+| `vendor/tell/` | Bundle browser do `@tell-ai/sdk` (IIFE `TellSDK`) + `node-shims.js` (stubs de node builtins p/ o AI-SDK). GPL-3.0. |
 | `css/app.css` | Tema dark. |
 | `vendor/swiftlatex/` | Engine vendored. Patches: endpoint texlive → origin local; `ENGINE_PATH` via `document.currentScript`; `compileFormat` devolvendo os bytes (Uint8Array) do fmt. |
 | `scripts/serve.js` | Dev server + resolvedor kpathsea (ordem `TEX_SUBROOTS` e `TEXMF_DIRS` como o TeXLive), `fix_extension` (ids → extensões), header `fileid`, 301 para MISS, espelho em `web/pdftex/`, `POST /api/upload-fmt`. |
@@ -42,7 +43,6 @@ resposta com header `fileid: <basename>` (o arquivo vai para `/tex/<fileid>` no 
 | `scripts/bootstrap.js` | Playwright: fluxo completo headless (build do fmt + compile) — usado para popular o espelho. |
 | `scripts/probe.js` / `verify.js` | Diagnóstico: compile headless com logs do servidor / verificação do PDF gerado. |
 | `pdftex/` | **Espelho estático** (bootstrap concluído): 82 arquivos, 34 MB — inclui `10/swiftlatexpdftex.fmt` (22 MB, built via wasm, magic `XT2W`). |
-| `task.md` | Checklist de progresso do projeto web. |
 
 ## Fluxo do app (3 etapas)
 
@@ -53,6 +53,19 @@ resposta com header `fileid: <basename>` (o arquivo vai para `/tex/<fileid>` no 
    (mesmo prompt do `gen-pdf`: extrai o skeleton do template e preenche com o CV).
 3. **LaTeX → PDF** — editar o CV.tex (ou fazer upload de um .tex pronto, pulando o LLM),
    **Compilar PDF** no engine wasm → viewer + download.
+
+### LLM (tell-ai sdk)
+
+- Geração via `TellSDK.tell` (o mesmo `tell --no-exec` do CLI como função): system prompt
+  no-exec, modelo por alias ou spec completo (`j`, `d`, `g`, `openai:gpt-5.6-sol:high`…),
+  tags `<think>`/`<RUN>` removidas, one-shot (sem streaming).
+- **Config global** no painel "LLM": campo Model (default `j` = google:gemini-3.5-flash-lite)
+  + grade de 9 vendors (openai, anthropic, google, deepseek, xai, cerebras, fireworks,
+  moonshotai, openrouter) com key e base URL (URLs servem para CORS proxy quando o provedor
+  não libera chamadas de browser). Tudo no localStorage.
+- Migração automática do config antigo (`apiKey`→`keys.openai`, `baseURL`→`urls.openai`).
+- O bundle IIFE do SDK requer `node-shims.js` antes de carregar (AI-SDK usa `require('path'|'fs'|'os')`
+  no escopo de módulo para helpers de auth — nunca exercitados pois sempre passamos key explícita).
 
 ### Seções (workspaces por vaga)
 

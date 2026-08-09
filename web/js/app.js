@@ -18,10 +18,9 @@
   };
 
   let config = {
-    baseURL: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini',
-    apiKey: '',
-    temperature: 0.7,
+    model: 'j',
+    keys: {},
+    urls: {},
   };
   let sections = {};
   let activeId = null;
@@ -61,7 +60,7 @@
   function loadAll() {
     try {
       const c = JSON.parse(localStorage.getItem(LS_CONFIG) || '{}');
-      Object.assign(config, c);
+      config = migrateConfig(c);
       sections = JSON.parse(localStorage.getItem(LS_SECTIONS) || '{}');
       const a = localStorage.getItem(LS_ACTIVE);
       if (a && sections[a]) activeId = a;
@@ -69,6 +68,17 @@
       console.error('load failed', e);
       sections = {};
     }
+  }
+
+  function migrateConfig(c) {
+    const out = {
+      model: c.model || 'j',
+      keys: Object.assign({}, c.keys),
+      urls: Object.assign({}, c.urls),
+    };
+    if (c.apiKey && !out.keys.openai) out.keys.openai = c.apiKey;
+    if (c.baseURL && !out.urls.openai) out.urls.openai = c.baseURL;
+    return out;
   }
 
   // ---------- Helpers ----------
@@ -308,14 +318,15 @@
     if (!s) return;
     const prompt = buildAtsPrompt(s.master, s.lang, s.role);
     setBusy('btn-gen-cv', true, 'Gerando CV_OUT.md…');
-    setStatus('Gerando CV_OUT.md (LLM)…', 'busy');
-    const out = await llmChat(config, prompt, {
-      onToken: (t) => { s.cvOut += t; $('cvOut').value = s.cvOut; },
-    });
-    if (out) { s.cvOut = out; $('cvOut').value = out; }
-    touch(s); saveAll();
-    setBusy('btn-gen-cv', false);
-    setStatus('CV_OUT.md gerado — revise na Etapa 2', 'ok');
+    setStatus('Gerando CV_OUT.md (' + config.model + ')…', 'busy');
+    try {
+      s.cvOut = await tellChat(prompt, config);
+      $('cvOut').value = s.cvOut;
+      touch(s); saveAll();
+      setStatus('CV_OUT.md gerado — revise na Etapa 2', 'ok');
+    } finally {
+      setBusy('btn-gen-cv', false);
+    }
   }
 
   async function genCover() {
@@ -323,14 +334,15 @@
     if (!s) return;
     const prompt = buildCoverPrompt(s.cvOut || s.master, s.lang, s.role, s.pitch);
     setBusy('btn-gen-cover', true, 'Gerando cover.md…');
-    setStatus('Gerando cover.md (LLM)…', 'busy');
-    const out = await llmChat(config, prompt, {
-      onToken: (t) => { s.cover += t; $('cover').value = s.cover; },
-    });
-    if (out) { s.cover = out; $('cover').value = out; }
-    touch(s); saveAll();
-    setBusy('btn-gen-cover', false);
-    setStatus('cover.md gerado', 'ok');
+    setStatus('Gerando cover.md (' + config.model + ')…', 'busy');
+    try {
+      s.cover = await tellChat(prompt, config);
+      $('cover').value = s.cover;
+      touch(s); saveAll();
+      setStatus('cover.md gerado', 'ok');
+    } finally {
+      setBusy('btn-gen-cover', false);
+    }
   }
 
   async function toTex() {
@@ -338,15 +350,16 @@
     if (!s) return;
     const prompt = buildTexPrompt(s.cvOut || s.master, s.template);
     setBusy('btn-to-tex', true, 'Convertendo para LaTeX…');
-    setStatus('Convertendo markdown → LaTeX (LLM)…', 'busy');
-    const out = await llmChat(config, prompt, {
-      onToken: (t) => { s.tex += t; $('tex').value = s.tex; },
-    });
-    if (out) { s.tex = out; $('tex').value = out; }
-    touch(s); saveAll();
-    setBusy('btn-to-tex', false);
-    setStatus('.tex gerado — revise e compile na Etapa 3', 'ok');
-    goTo(3);
+    setStatus('Convertendo markdown → LaTeX (' + config.model + ')…', 'busy');
+    try {
+      s.tex = await tellChat(prompt, config);
+      $('tex').value = s.tex;
+      touch(s); saveAll();
+      setStatus('.tex gerado — revise e compile na Etapa 3', 'ok');
+      goTo(3);
+    } finally {
+      setBusy('btn-to-tex', false);
+    }
   }
 
   // ---------- Etapa 3 / Engine ----------
@@ -420,16 +433,27 @@
 
   // ---------- Config LLM ----------
   function fillConfig() {
-    $('cfg-base').value = config.baseURL;
     $('cfg-model').value = config.model;
-    $('cfg-key').value = config.apiKey;
-    $('cfg-temp').value = config.temperature;
+    LLM_VENDORS.forEach((v) => {
+      const k = $('cfg-key-' + v);
+      const u = $('cfg-url-' + v);
+      if (k) k.value = (config.keys && config.keys[v]) || '';
+      if (u) u.value = (config.urls && config.urls[v]) || '';
+    });
   }
 
   function bindConfig() {
-    ['cfg-base', 'cfg-model', 'cfg-key', 'cfg-temp'].forEach((id) => {
-      $(id).addEventListener('input', () => {
-        config[id.replace('cfg-', '')] = id === 'cfg-temp' ? parseFloat($(id).value) || 0.7 : $(id).value;
+    $('cfg-model').addEventListener('input', () => {
+      config.model = $('cfg-model').value.trim() || 'g';
+      saveAll();
+    });
+    LLM_VENDORS.forEach((v) => {
+      $('cfg-key-' + v).addEventListener('input', () => {
+        config.keys[v] = $('cfg-key-' + v).value.trim();
+        saveAll();
+      });
+      $('cfg-url-' + v).addEventListener('input', () => {
+        config.urls[v] = $('cfg-url-' + v).value.trim();
         saveAll();
       });
     });

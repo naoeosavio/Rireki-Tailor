@@ -14,6 +14,23 @@ const { chromium } = require('playwright');
   console.log('sections:', await names());
   console.log('master:', (await page.inputValue('#master')).length, '| template:', (await page.inputValue('#template')).length, '| role:', (await page.inputValue('#role')).length);
 
+  // TellSDK carregado + config LLM
+  const sdk = await page.evaluate(() => ({
+    tell: typeof (window.TellSDK && window.TellSDK.tell),
+    modJ: window.TellSDK && window.TellSDK.MODELS && window.TellSDK.MODELS['j'],
+    modD: window.TellSDK && window.TellSDK.MODELS && window.TellSDK.MODELS['d'],
+    nVendors: document.querySelectorAll('#cfg-panel .vendor-row').length,
+  }));
+  console.log('TellSDK:', JSON.stringify(sdk));
+  console.log('cfg model default:', await page.inputValue('#cfg-model'));
+  await page.$eval('#cfg-panel', (d) => (d.open = true));
+  await page.fill('#cfg-model', 'd');
+  await page.fill('#cfg-key-google', 'AIza-test');
+  await page.waitForTimeout(200);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1200);
+  console.log('cfg model persistido:', await page.inputValue('#cfg-model'), '| google key persistida:', (await page.inputValue('#cfg-key-google')).length > 0);
+
   // nova seção (dialog do prompt)
   page.once('dialog', async (d) => { await d.accept('Vaga Teste'); });
   await page.click('#btn-new-section');

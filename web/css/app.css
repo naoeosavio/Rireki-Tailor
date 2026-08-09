@@ -85,6 +85,10 @@ footer a { color: var(--accent); }
   border-radius: 6px; padding: 8px; margin-top: 4px;
 }
 #cfg-panel .hint { color: var(--muted); font-size: .8em; }
+#cfg-panel .vendors { margin: 10px 0; display: flex; flex-direction: column; gap: 6px; }
+#cfg-panel .vendor-row { display: grid; grid-template-columns: 110px 1fr 1fr; gap: 8px; align-items: center; }
+#cfg-panel .vendor-row span { color: var(--muted); font-size: .85em; font-family: ui-monospace, monospace; }
+@media (max-width: 700px) { #cfg-panel .vendor-row { grid-template-columns: 1fr; } }
 
 .warn { color: var(--warn); }
 
