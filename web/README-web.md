@@ -34,7 +34,7 @@ resposta com header `fileid: <basename>` (o arquivo vai para `/tex/<fileid>` no 
 | `js/app.js` | Estado, seções (workspaces por vaga), auto-save (localStorage), LLM, engine. |
 | `js/prompts.js` | Prompts ATS/cover/tex (idênticos ao CLI; ATS carrega `data/PROMPT_ATS.md`). |
 | `js/llm.js` | Camada LLM via **tell-ai sdk** (`TellSDK.tell`): model alias/spec + keys/urls por vendor, migração de config antigo, teste de conexão. |
-| `vendor/tell/` | Bundle browser do `@tell-ai/sdk` (IIFE `TellSDK`) + `node-shims.js` (stubs de node builtins p/ o AI-SDK). GPL-3.0. |
+| `vendor/tell/` | Bundle browser do `@tell-ai/sdk` (IIFE `TellSDK`), copiado do npm (`dist/browser-global.global.js`, v0.2.0). MIT. |
 | `css/app.css` | Tema dark. |
 | `vendor/swiftlatex/` | Engine vendored. Patches: endpoint texlive → origin local; `ENGINE_PATH` via `document.currentScript`; `compileFormat` devolvendo os bytes (Uint8Array) do fmt. |
 | `scripts/serve.js` | Dev server + resolvedor kpathsea (ordem `TEX_SUBROOTS` e `TEXMF_DIRS` como o TeXLive), `fix_extension` (ids → extensões), header `fileid`, 301 para MISS, espelho em `web/pdftex/`, `POST /api/upload-fmt`. |
@@ -64,8 +64,8 @@ resposta com header `fileid: <basename>` (o arquivo vai para `/tex/<fileid>` no 
   moonshotai, openrouter) com key e base URL (URLs servem para CORS proxy quando o provedor
   não libera chamadas de browser). Tudo no localStorage.
 - Migração automática do config antigo (`apiKey`→`keys.openai`, `baseURL`→`urls.openai`).
-- O bundle IIFE do SDK requer `node-shims.js` antes de carregar (AI-SDK usa `require('path'|'fs'|'os')`
-  no escopo de módulo para helpers de auth — nunca exercitados pois sempre passamos key explícita).
+- O bundle IIFE do SDK é self-contained (define `process` próprio, sem `require()` de
+  node builtins) — carrega direto no browser, sem shims.
 
 ### Seções (workspaces por vaga)
 
