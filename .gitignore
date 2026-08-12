@@ -5,3 +5,5 @@ temp/
 __pycache__/
 .DS_Store
 Fullstack
+node*
+*-lock*

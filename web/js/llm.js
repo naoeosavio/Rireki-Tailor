@@ -19,7 +19,7 @@ function tellCfg(config) {
 async function tellChat(userPrompt, config) {
   const sdk = window.TellSDK;
   if (!sdk || typeof sdk.tell !== 'function') {
-    throw new Error('TellSDK não carregado (vendor/tell/tell.bundle.js).');
+    throw new Error('TellSDK não carregado (@tell-ai/sdk).');
   }
   const cfg = tellCfg(config);
   if (!Object.values(cfg.keys).some(Boolean)) {
