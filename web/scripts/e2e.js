@@ -33,12 +33,12 @@ const { chromium } = require('playwright');
     return { size: b.length, head: Array.from(b.slice(0, 8)).map((x) => x.toString(16).padStart(2, '0')).join(' ') };
   }, viewerSrc);
   console.log('pdf:', JSON.stringify(header));
-  const dlPdf = await page.$eval('#dl-pdf', (b) => b.getAttribute('download'));
-  console.log('download pdf attr:', dlPdf);
+  const dlPdf = await page.$eval('#dl-pdf', (b) => !!b);
+  console.log('download pdf btn:', dlPdf);
 
   const s = await page.textContent('#status');
   console.log('errors:', errors.length ? errors : 'none');
   await browser.close();
   if (!s.startsWith('PDF gerado')) process.exit(1);
-  if (!header.head.startsWith('25504446')) process.exit(1);
+  if (!header.head.replace(/ /g, '').startsWith('25504446')) process.exit(1);
 })().catch((e) => { console.error('E2E-FAIL:', e); process.exit(1); });
