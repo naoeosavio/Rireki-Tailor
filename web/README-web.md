@@ -30,16 +30,17 @@ resposta com header `fileid: <basename>` (o arquivo vai para `/tex/<fileid>` no 
 
 | Arquivo | Papel |
 |---|---|
-| `index.html` | **App principal** — seções por vaga + stepper 3 etapas + PDF viewer. |
-| `js/app.js` | Estado, seções (workspaces por vaga), auto-save (localStorage), LLM, engine. |
+| `index.html` | **App principal** — seções por vaga + stepper 3 etapas + PDF viewer + **menu global (sidebar)** + **chat por seção**. |
+| `js/app.js` | Estado, seções (workspaces por vaga), auto-save (localStorage), **tema dark/light**, **modais/toasts**, **biblioteca de masters/templates**, LLM, engine. |
+| `js/chat.js` | **Chat por seção** ("Assistente da vaga"): histórico por seção, system prompt contextual (vaga/master/CV_OUT/cover/tex), markdown-lite seguro, quick-asks. |
 | `js/prompts.js` | Prompts ATS/cover/tex (idênticos ao CLI; ATS carrega `data/PROMPT_ATS.md`). |
-| `js/llm.js` | Camada LLM via **tell-ai sdk** (`TellSDK.tell`): model alias/spec + keys/urls por vendor, migração de config antigo, teste de conexão. |
+| `js/llm.js` | Camada LLM via **tell-ai sdk** (`TellSDK.tell`): model alias/spec + keys/urls por vendor, migração de config antigo, teste de conexão, `chatTell()` (modo chat com `system`/`context`, `exec:false`). |
 | `vendor/tell/` | Bundle browser do `@tell-ai/sdk` (IIFE `TellSDK`), copiado do npm (`dist/browser-global.global.js`, v0.2.0). MIT. |
-| `css/app.css` | Tema dark. |
+| `css/app.css` | Temas **dark/light** (`data-theme`), design system (botões, cards, stepper, toasts, modais, sidebar, chat), responsivo, `prefers-reduced-motion`. |
 | `vendor/swiftlatex/` | Engine vendored. Patches: endpoint texlive → origin local; `ENGINE_PATH` via `document.currentScript`; `compileFormat` devolvendo os bytes (Uint8Array) do fmt. |
 | `scripts/serve.js` | Dev server + resolvedor kpathsea (ordem `TEX_SUBROOTS` e `TEXMF_DIRS` como o TeXLive), `fix_extension` (ids → extensões), header `fileid`, 301 para MISS, espelho em `web/pdftex/`, `POST /api/upload-fmt`. |
 | `test.html` | Harness de diagnóstico: carrega o engine, compila `data/CV_ATS.tex`, reconstrói o formato. `?autostart=format` / `?autostart=compile`. |
-| `scripts/smoke.js` / `e2e.js` | Playwright: UI (seções, persistência, export) e compile completo do PDF. |
+| `scripts/smoke.js` / `e2e.js` | Playwright: UI (temas, sidebar/biblioteca, modais, chat, persistência, export) e compile completo do PDF. |
 | `scripts/bootstrap.js` | Playwright: fluxo completo headless (build do fmt + compile) — usado para popular o espelho. |
 | `scripts/probe.js` / `verify.js` | Diagnóstico: compile headless com logs do servidor / verificação do PDF gerado. |
 | `pdftex/` | **Espelho estático** (bootstrap concluído): 82 arquivos, 34 MB — inclui `10/swiftlatexpdftex.fmt` (22 MB, built via wasm, magic `XT2W`). |
@@ -47,12 +48,55 @@ resposta com header `fileid: <basename>` (o arquivo vai para `/tex/<fileid>` no 
 ## Fluxo do app (3 etapas)
 
 1. **Entradas** — descrição da vaga, CV master (toggle EN/PT), template LaTeX e pitch opcional,
-   com upload de arquivo e botões "↺ padrão" (restaura `data/`). **Gerar CV_OUT.md** e **cover.md**
-   via LLM (streaming no textarea).
-2. **Markdown** — editar/baixar CV_OUT.md e cover.md. **Converter para LaTeX** → CV.tex
+   com upload de arquivo, botões "↺ padrão" (restaura `data/`), **dropdowns da biblioteca**
+   (copiam master/template globais para a seção) e botões **"salvar como modelo"** (bookmark).
+   **Gerar CV_OUT.md** e **cover.md** via LLM (one-shot, com spinner + barra de progresso).
+2. **Markdown** — editar/copiar/baixar CV_OUT.md e cover.md. **Converter para LaTeX** → CV.tex
    (mesmo prompt do `gen-pdf`: extrai o skeleton do template e preenche com o CV).
-3. **LaTeX → PDF** — editar o CV.tex (ou fazer upload de um .tex pronto, pulando o LLM),
-   **Compilar PDF** no engine wasm → viewer + download.
+3. **LaTeX → PDF** — editar o CV.tex (ou upload de um .tex pronto, pulando o LLM),
+   **Compilar PDF** no engine wasm → viewer + download. Ao lado do PDF, o **chat "Assistente
+   da vaga"** responde dúvidas/sugere melhorias com base no contexto da seção.
+
+### Menu global (sidebar) e biblioteca
+
+- Botões de abertura: **hamburger** (aba Biblioteca) e **LLM** no header (aba LLM); fecha com X,
+  backdrop ou `Esc`.
+- **Biblioteca**: até **2 CV masters** (com idioma EN/PT) e **2 templates .tex**, com nome,
+  edição inline, upload e exclusão (modal de confirmação). Seed automático na 1ª execução
+  ("Master EN (padrão)" + "CV_ATS (padrão)" a partir de `data/`).
+- **Cópia por seção**: selecionar um item no dropdown do card (Etapa 1) **copia** o conteúdo
+  para a seção, que continua editável/independente (`s.masterId`/`s.templateId` viram
+  "personalizado" se o usuário editar em cima). Nova seção herda a escolha da atual.
+- **Salvar como modelo**: captura o master/template da seção ativa para a biblioteca
+  (botão bookmark no card ou ação equivalente na sidebar); limite de 2 com toast.
+- **Config LLM** vive na aba LLM da sidebar (mesmos IDs `#cfg-*`); keys/urls no localStorage.
+- Persistência: `localStorage["riki.library"]` = `{masters:[{id,name,lang,content}], templates:[…]}`;
+  incluída no export/import JSON (`riki-secoes-*.json`).
+
+### Chat por seção ("Assistente da vaga")
+
+- Painel na Etapa 3 (coluna ao lado do PDF; em telas < 1280px vai para largura total abaixo).
+- Histórico **por seção** (`section.chat`), auto-salvo; limpo ao duplicar; "limpar" com modal.
+- Cada mensagem usa `chatTell()` = `TellSDK.tell(msg, {exec:false, system, context})`:
+  - `system`: instruções do assistente + snapshot dos campos não vazios da seção
+    (vaga, master, CV_OUT, cover, CV.tex), no idioma da seção (pt/en);
+  - `context`: últimos ~14 turnos serializados (cap ~24k chars).
+  - One-shot por mensagem (sem streaming no bundle browser) — UI mostra bolha "pensando…".
+- Respostas renderizadas com **markdown-lite** (HTML escapado antes — sem XSS; suporta
+  code blocks, inline code, negrito, itálico, listas, links http/https, headings).
+- **Quick-asks** no estado vazio (filtrados pelos campos disponíveis); Enter envia,
+  Shift+Enter quebra linha; copiar mensagem; chips de contexto mostram o que o assistente "vê".
+- Sem API key: bolha de erro com botão que abre a sidebar na aba LLM.
+
+### UI (tema, toasts, modais)
+
+- **Temas dark/light** via `data-theme` no `<html>`; toggle no header; persistido em
+  `localStorage["riki.theme"]`; fallback `prefers-color-scheme`.
+- **Toasts** (`#toasts`) substituem feedbacks efêmeros; **modais customizados**
+  (`modal.confirm/prompt/alert`) substituem `prompt/confirm/alert` nativos (criar/renomear/
+  excluir seção, salvar modelo, limpar chat, exclusões na biblioteca).
+- Barra de progresso indeterminada + spinner nos botões durante geração LLM/compile;
+  contadores de caracteres; botões de copiar; stepper com estados done/active.
 
 ### LLM (tell-ai sdk)
 
@@ -69,9 +113,11 @@ resposta com header `fileid: <basename>` (o arquivo vai para `/tex/<fileid>` no 
 
 ### Seções (workspaces por vaga)
 
-- Cada seção guarda snapshot próprio: vaga, master, template, pitch, cvOut, cover, tex.
-- **+ Nova seção** herda master + template da seção atual; tudo auto-salvo em localStorage.
-- Exportar/importar seções como JSON (`riki-secoes-*.json`).
+- Cada seção guarda snapshot próprio: vaga, master, template, pitch, cvOut, cover, tex,
+  **chat** e as referências da biblioteca (`masterId`/`templateId`).
+- **+ Nova seção** (via modal) herda master + template + escolha da biblioteca da seção atual;
+  **Duplicar** limpa conteúdo gerado (cvOut/cover/tex/chat); tudo auto-salvo em localStorage.
+- Exportar/importar seções como JSON (`riki-secoes-*.json`) — inclui biblioteca e config.
 - Config LLM (baseURL/model/key) é **global** e fica no localStorage do browser —
   compatível com qualquer endpoint OpenAI-compatible com CORS (OpenAI, OpenRouter, Groq, DeepSeek…).
 

@@ -1,42 +1,108 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="RirekiTailor — monte um CV ATS otimizado por vaga: markdown → LaTeX → PDF, direto no browser.">
+<meta name="theme-color" content="#0f1115">
 <title>RirekiTailor — CV para vaga</title>
-<link rel="icon" href="data:,">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%234f8cff'/%3E%3Ctext x='16' y='22' font-family='system-ui,sans-serif' font-size='17' font-weight='700' fill='%230b1220' text-anchor='middle'%3ER%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-<header>
-  <h1>RirekiTailor <span>— CV por vaga, do markdown ao PDF</span></h1>
-  <div class="sections-bar">
-    <label for="section-select">Seção:</label>
-    <select id="section-select"></select>
-    <button id="btn-new-section" class="primary">+ Nova seção</button>
-    <button id="btn-rename-section">Renomear</button>
-    <button id="btn-dup-section">Duplicar</button>
-    <button id="btn-del-section">Excluir</button>
+
+<!-- ============ sprite de ícones (offline) ============ -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></symbol>
+  <symbol id="i-dup" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></symbol>
+  <symbol id="i-reset" viewBox="0 0 24 24"><path d="M1 4v6h6M3.5 15a9 9 0 1 0 2-9.4L1 10"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></symbol>
+  <symbol id="i-eraser" viewBox="0 0 24 24"><path d="M20 20H7L3 16a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l6 6a1 1 0 0 1 0 1.4L13 20M6 11l7 7"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 14h.01M15 14h.01"/><circle cx="12" cy="3" r="1"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+</svg>
+
+<!-- barra de progresso global -->
+<div id="progress" class="progress" hidden><div class="progress-bar"></div></div>
+
+<header class="app-header">
+  <div class="brand-row">
+    <button id="btn-menu" class="icon-btn" aria-label="Abrir menu de configurações" title="Menu / Biblioteca">
+      <svg class="ic"><use href="#i-menu"/></svg>
+    </button>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">R</span>
+      <h1>RirekiTailor <span>CV por vaga · do markdown ao PDF</span></h1>
+    </div>
     <span class="spacer"></span>
-    <button id="btn-export">Exportar JSON</button>
-    <button id="btn-cfg">LLM</button>
+    <div id="status" class="status" role="status" aria-live="polite">carregando…</div>
+    <button id="btn-theme" class="icon-btn" aria-label="Alternar tema claro/escuro" title="Tema claro/escuro">
+      <svg class="ic ic-sun"><use href="#i-sun"/></svg>
+      <svg class="ic ic-moon"><use href="#i-moon"/></svg>
+    </button>
   </div>
-  <div id="status" class="status">carregando…</div>
+
+  <div class="sections-bar">
+    <label for="section-select" class="sr-only">Seção ativa</label>
+    <select id="section-select"></select>
+    <span class="btn-group">
+      <button id="btn-new-section" class="primary" title="Criar nova seção (herda master + template)">
+        <svg class="ic"><use href="#i-plus"/></svg><span>Nova seção</span>
+      </button>
+      <button id="btn-rename-section" title="Renomear seção">
+        <svg class="ic"><use href="#i-pencil"/></svg><span>Renomear</span>
+      </button>
+      <button id="btn-dup-section" title="Duplicar seção">
+        <svg class="ic"><use href="#i-dup"/></svg><span>Duplicar</span>
+      </button>
+      <button id="btn-del-section" class="danger-ghost" title="Excluir seção">
+        <svg class="ic"><use href="#i-trash"/></svg><span>Excluir</span>
+      </button>
+    </span>
+    <span class="spacer"></span>
+    <button id="btn-export" title="Exportar todas as seções como JSON">
+      <svg class="ic"><use href="#i-export"/></svg><span>Exportar JSON</span>
+    </button>
+    <button id="btn-cfg" title="Configuração LLM">
+      <svg class="ic"><use href="#i-sliders"/></svg><span>LLM</span>
+    </button>
+  </div>
   <div class="meta" id="last-saved"></div>
 </header>
 
-<div class="steps">
-  <div class="step-dot active" data-nav="1">1 · Entradas</div>
-  <div class="step-dot" data-nav="2">2 · Markdown</div>
-  <div class="step-dot" data-nav="3">3 · LaTeX → PDF</div>
-</div>
+<nav class="steps" aria-label="Etapas do fluxo">
+  <button class="step-dot active" data-nav="1" aria-current="step">
+    <span class="step-num">1</span><span class="step-label">Entradas</span>
+  </button>
+  <span class="step-line" aria-hidden="true"></span>
+  <button class="step-dot" data-nav="2">
+    <span class="step-num">2</span><span class="step-label">Markdown</span>
+  </button>
+  <span class="step-line" aria-hidden="true"></span>
+  <button class="step-dot" data-nav="3">
+    <span class="step-num">3</span><span class="step-label">LaTeX → PDF</span>
+  </button>
+</nav>
 
 <main>
 
   <!-- ============ ETAPA 1 ============ -->
   <section class="panel" id="panel1">
-    <p id="step1-empty" style="display:none" class="warn">
-      Nenhuma seção. Clique em <b>+ Nova seção</b> para começar (herda master CV + template).
+    <p id="step1-empty" style="display:none" class="warn empty-state">
+      Nenhuma seção. Clique em <b>+ Nova seção</b> para começar (herda master CV + template da biblioteca).
     </p>
 
     <div class="grid-2">
@@ -44,53 +110,66 @@
         <div class="card-head">
           <h2>Descrição da vaga</h2>
           <span class="actions">
-            <button data-upload="role" title="carregar arquivo">⬆ upload</button>
-            <button data-default="role" title="restaurar data/role.md">↺ padrão</button>
+            <button class="icon-btn" data-upload="role" title="Carregar arquivo" aria-label="Carregar vaga de arquivo"><svg class="ic"><use href="#i-upload"/></svg></button>
+            <button class="icon-btn" data-default="role" title="Restaurar data/role.md" aria-label="Restaurar vaga padrão"><svg class="ic"><use href="#i-reset"/></svg></button>
           </span>
         </div>
         <textarea id="role" data-bind="role" rows="10" placeholder="Cole aqui a descrição da vaga (ou carregue um arquivo)…"></textarea>
+        <div class="ta-foot"><span class="counter" data-count-for="role"></span></div>
       </div>
 
       <div class="card">
         <div class="card-head">
           <h2>CV master</h2>
           <span class="actions">
-            <select id="lang" data-bind="lang"><option value="en">EN</option><option value="pt">PT</option></select>
-            <button data-upload="master" title="carregar arquivo">⬆ upload</button>
-            <button data-default="master" title="restaurar data/CV_MASTER_*.md">↺ padrão</button>
+            <select id="lang" data-bind="lang" aria-label="Idioma do CV"><option value="en">EN</option><option value="pt">PT</option></select>
+            <select id="master-lib" class="lib-select" aria-label="Copiar master da biblioteca"></select>
+            <button class="icon-btn" data-save-model="master" title="Salvar este master na biblioteca (modelo)" aria-label="Salvar master como modelo"><svg class="ic"><use href="#i-bookmark"/></svg></button>
+            <button class="icon-btn" data-upload="master" title="Carregar arquivo" aria-label="Carregar master de arquivo"><svg class="ic"><use href="#i-upload"/></svg></button>
+            <button class="icon-btn" data-default="master" title="Restaurar data/CV_MASTER_*.md" aria-label="Restaurar master padrão"><svg class="ic"><use href="#i-reset"/></svg></button>
           </span>
         </div>
         <textarea id="master" data-bind="master" rows="10" placeholder="CV mestre (markdown)…"></textarea>
+        <div class="ta-foot"><span class="counter" data-count-for="master"></span></div>
       </div>
 
       <div class="card">
         <div class="card-head">
           <h2>Template LaTeX</h2>
           <span class="actions">
-            <button data-upload="template" title="carregar arquivo">⬆ upload</button>
-            <button data-default="template" title="restaurar data/CV_ATS.tex">↺ padrão</button>
+            <select id="template-lib" class="lib-select" aria-label="Copiar template da biblioteca"></select>
+            <button class="icon-btn" data-save-model="template" title="Salvar este template na biblioteca (modelo)" aria-label="Salvar template como modelo"><svg class="ic"><use href="#i-bookmark"/></svg></button>
+            <button class="icon-btn" data-upload="template" title="Carregar arquivo" aria-label="Carregar template de arquivo"><svg class="ic"><use href="#i-upload"/></svg></button>
+            <button class="icon-btn" data-default="template" title="Restaurar data/CV_ATS.tex" aria-label="Restaurar template padrão"><svg class="ic"><use href="#i-reset"/></svg></button>
           </span>
         </div>
         <textarea id="template" data-bind="template" rows="10" spellcheck="false" placeholder="template/CV_ATS.tex…"></textarea>
+        <div class="ta-foot"><span class="counter" data-count-for="template"></span></div>
       </div>
 
       <div class="card">
         <div class="card-head">
           <h2>Pitch (opcional)</h2>
           <span class="actions">
-            <button data-upload="pitch" title="carregar arquivo">⬆ upload</button>
-            <button data-default="pitch" title="restaurar data/pitch.md">↺ padrão</button>
+            <button class="icon-btn" data-upload="pitch" title="Carregar arquivo" aria-label="Carregar pitch de arquivo"><svg class="ic"><use href="#i-upload"/></svg></button>
+            <button class="icon-btn" data-default="pitch" title="Restaurar data/pitch.md" aria-label="Restaurar pitch padrão"><svg class="ic"><use href="#i-reset"/></svg></button>
           </span>
         </div>
         <textarea id="pitch" data-bind="pitch" rows="7" placeholder="Instruções/destaques pessoais para o cover…"></textarea>
-        <label class="check"><input type="checkbox" id="genCover" data-bind="genCover"> gerar também o cover.md</label>
+        <div class="ta-foot"><span class="counter" data-count-for="pitch"></span></div>
+        <label class="check toggle">
+          <input type="checkbox" id="genCover" data-bind="genCover">
+          <span class="toggle-track" aria-hidden="true"></span>
+          gerar também o cover.md
+        </label>
       </div>
     </div>
 
     <div class="actions-row">
-      <button id="btn-gen-cv" class="primary big">Gerar CV_OUT.md</button>
-      <button id="btn-gen-cover" class="big">Gerar cover.md</button>
-      <button data-nav="2" class="ghost">Próximo →</button>
+      <button id="btn-gen-cv" class="primary big"><svg class="ic"><use href="#i-file"/></svg> Gerar CV_OUT.md</button>
+      <button id="btn-gen-cover" class="big"><svg class="ic"><use href="#i-file"/></svg> Gerar cover.md</button>
+      <span class="spacer"></span>
+      <button data-nav="2" class="ghost">Próximo <svg class="ic"><use href="#i-send"/></svg></button>
     </div>
   </section>
 
@@ -100,47 +179,75 @@
       <div class="card">
         <div class="card-head">
           <h2>CV_OUT.md</h2>
-          <span class="actions"><button id="dl-cvout">⬇ baixar</button></span>
+          <span class="actions">
+            <button class="icon-btn" data-copy="cvOut" title="Copiar" aria-label="Copiar CV_OUT.md"><svg class="ic"><use href="#i-copy"/></svg></button>
+            <button class="icon-btn" id="dl-cvout" title="Baixar" aria-label="Baixar CV_OUT.md"><svg class="ic"><use href="#i-download"/></svg></button>
+          </span>
         </div>
         <textarea id="cvOut" rows="16" spellcheck="false" placeholder="Gere na Etapa 1 ou cole aqui (permite pular o LLM)…"></textarea>
+        <div class="ta-foot"><span class="counter" data-count-for="cvOut"></span></div>
       </div>
       <div class="card">
         <div class="card-head">
           <h2>cover.md</h2>
-          <span class="actions"><button id="dl-cover">⬇ baixar</button></span>
+          <span class="actions">
+            <button class="icon-btn" data-copy="cover" title="Copiar" aria-label="Copiar cover.md"><svg class="ic"><use href="#i-copy"/></svg></button>
+            <button class="icon-btn" id="dl-cover" title="Baixar" aria-label="Baixar cover.md"><svg class="ic"><use href="#i-download"/></svg></button>
+          </span>
         </div>
         <textarea id="cover" rows="16" spellcheck="false" placeholder="Cover gerado (opcional)…"></textarea>
+        <div class="ta-foot"><span class="counter" data-count-for="cover"></span></div>
       </div>
     </div>
     <div class="actions-row">
       <button data-nav="1" class="ghost">← Voltar</button>
-      <button id="btn-to-tex" class="primary big">Converter para LaTeX (.tex)</button>
+      <span class="spacer"></span>
       <button data-nav="3" class="ghost">Próximo →</button>
+      <button id="btn-to-tex" class="primary big"><svg class="ic"><use href="#i-file"/></svg> Converter para LaTeX (.tex)</button>
     </div>
   </section>
 
   <!-- ============ ETAPA 3 ============ -->
   <section class="panel" id="panel3" style="display:none">
-    <div class="grid-2">
+    <div class="grid-3">
       <div class="card">
         <div class="card-head">
           <h2>CV.tex</h2>
           <span class="actions">
-            <button data-upload="tex" title="carregar .tex pronto (sem LLM)">⬆ upload</button>
-            <button id="dl-tex">⬇ baixar</button>
+            <button class="icon-btn" data-copy="tex" title="Copiar" aria-label="Copiar CV.tex"><svg class="ic"><use href="#i-copy"/></svg></button>
+            <button class="icon-btn" data-upload="tex" title="Carregar .tex pronto (sem LLM)" aria-label="Carregar .tex de arquivo"><svg class="ic"><use href="#i-upload"/></svg></button>
+            <button class="icon-btn" id="dl-tex" title="Baixar" aria-label="Baixar CV.tex"><svg class="ic"><use href="#i-download"/></svg></button>
           </span>
         </div>
         <textarea id="tex" rows="16" spellcheck="false" placeholder="Converta na Etapa 2, carregue um .tex ou cole aqui…"></textarea>
+        <div class="ta-foot"><span class="counter" data-count-for="tex"></span></div>
       </div>
-      <div class="card">
+
+      <div class="card pdf-card">
         <div class="card-head"><h2>PDF</h2></div>
-        <div class="actions-row">
-          <button id="btn-compile" class="primary big">Compilar PDF</button>
-          <button id="dl-pdf" class="ghost">⬇ PDF</button>
+        <div class="actions-row tight">
+          <button id="btn-compile" class="primary big"><svg class="ic"><use href="#i-file"/></svg> Compilar PDF</button>
+          <button id="dl-pdf" class="ghost"><svg class="ic"><use href="#i-download"/></svg> PDF</button>
         </div>
-        <iframe id="viewer" style="display:none"></iframe>
+        <iframe id="viewer" style="display:none" title="Pré-visualização do PDF"></iframe>
         <pre id="log" class="log">—</pre>
       </div>
+
+      <aside class="card chat-card" id="chat-panel" aria-label="Assistente da vaga">
+        <div class="card-head">
+          <h2><svg class="ic"><use href="#i-bot"/></svg> Assistente da vaga</h2>
+          <span class="actions">
+            <button class="icon-btn" id="chat-clear" title="Limpar conversa" aria-label="Limpar conversa"><svg class="ic"><use href="#i-eraser"/></svg></button>
+          </span>
+        </div>
+        <div id="chat-context" class="chat-context" title="Contexto disponível para o assistente"></div>
+        <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
+        <div class="chat-input-row">
+          <textarea id="chat-input" rows="1" placeholder="Pergunte ou peça melhorias…" aria-label="Mensagem para o assistente"></textarea>
+          <button id="chat-send" class="primary icon-btn big" title="Enviar" aria-label="Enviar mensagem"><svg class="ic"><use href="#i-send"/></svg></button>
+        </div>
+        <div id="chat-status" class="hint"></div>
+      </aside>
     </div>
     <div class="actions-row">
       <button data-nav="2" class="ghost">← Voltar</button>
@@ -155,30 +262,76 @@
   RirekiTailor — compilação LaTeX no browser (SwiftLaTeX wasm)
 </footer>
 
-<!-- Config LLM (tell-ai sdk — OpenAI-compatible multi-vendor) -->
-<details id="cfg-panel">
-  <summary>Configuração LLM (tell-ai sdk)</summary>
-  <label>Model <input id="cfg-model" placeholder="j (alias) ou vendor:model:thinking"></label>
-  <p class="hint">Aliases: g (openai gpt-5.6-sol), j (google gemini-3.5-flash-lite), s (anthropic claude-sonnet-5), d (deepseek deepseek-v4-flash), x (xai grok-4.5), z (fireworks glm), K (moonshot kimi), c (openai luna)… Spec completo também aceito: <code>vendor:model:thinking</code>.</p>
-  <div class="vendors">
-    <div class="vendor-row"><span>openai</span><input id="cfg-key-openai" type="password" placeholder="key"><input id="cfg-url-openai" placeholder="base url (CORS proxy)"></div>
-    <div class="vendor-row"><span>anthropic</span><input id="cfg-key-anthropic" type="password" placeholder="key"><input id="cfg-url-anthropic" placeholder="base url (CORS proxy)"></div>
-    <div class="vendor-row"><span>google</span><input id="cfg-key-google" type="password" placeholder="key"><input id="cfg-url-google" placeholder="base url (CORS proxy)"></div>
-    <div class="vendor-row"><span>deepseek</span><input id="cfg-key-deepseek" type="password" placeholder="key"><input id="cfg-url-deepseek" placeholder="base url (CORS proxy)"></div>
-    <div class="vendor-row"><span>xai</span><input id="cfg-key-xai" type="password" placeholder="key"><input id="cfg-url-xai" placeholder="base url (CORS proxy)"></div>
-    <div class="vendor-row"><span>cerebras</span><input id="cfg-key-cerebras" type="password" placeholder="key"><input id="cfg-url-cerebras" placeholder="base url (CORS proxy)"></div>
-    <div class="vendor-row"><span>fireworks</span><input id="cfg-key-fireworks" type="password" placeholder="key"><input id="cfg-url-fireworks" placeholder="base url (CORS proxy)"></div>
-    <div class="vendor-row"><span>moonshotai</span><input id="cfg-key-moonshotai" type="password" placeholder="key"><input id="cfg-url-moonshotai" placeholder="base url (CORS proxy)"></div>
-    <div class="vendor-row"><span>openrouter</span><input id="cfg-key-openrouter" type="password" placeholder="key"><input id="cfg-url-openrouter" placeholder="base url (CORS proxy)"></div>
+<!-- ============ MENU GLOBAL (sidebar) ============ -->
+<div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
+<aside id="sidebar" class="sidebar" role="dialog" aria-modal="true" aria-labelledby="sidebar-title" aria-hidden="true">
+  <div class="sidebar-head">
+    <h2 id="sidebar-title">Configurações</h2>
+    <button id="btn-sidebar-close" class="icon-btn" aria-label="Fechar menu" title="Fechar">
+      <svg class="ic"><use href="#i-close"/></svg>
+    </button>
   </div>
-  <button id="btn-cfg-test">Testar conexão</button>
-  <p class="hint">Keys e URLs ficam no localStorage do seu navegador (chave do vendor usado pelo model; URLs servem p/ CORS proxy se o provedor não liberar o browser).</p>
-</details>
+  <div class="sidebar-tabs" role="tablist">
+    <button class="sidebar-tab active" data-tab="lib" role="tab" aria-selected="true">Biblioteca</button>
+    <button class="sidebar-tab" data-tab="llm" role="tab" aria-selected="false">LLM</button>
+  </div>
+
+  <div class="sidebar-body">
+    <!-- ===== Biblioteca ===== -->
+    <section class="sidebar-pane" data-pane="lib">
+      <div class="lib-group">
+        <div class="lib-head">
+          <h3>CV Masters <span class="badge" id="lib-master-count">0/2</span></h3>
+          <button id="btn-add-master" class="sm"><svg class="ic"><use href="#i-plus"/></svg> Adicionar</button>
+        </div>
+        <p class="hint">Até 2 masters globais (EN/PT). Cada seção copia o que quiser e edita livremente.</p>
+        <div id="lib-masters" class="lib-list"></div>
+        <button id="btn-save-master-model" class="ghost sm wide"><svg class="ic"><use href="#i-bookmark"/></svg> Salvar master atual da seção como modelo</button>
+      </div>
+
+      <div class="lib-group">
+        <div class="lib-head">
+          <h3>Templates LaTeX <span class="badge" id="lib-template-count">0/2</span></h3>
+          <button id="btn-add-template" class="sm"><svg class="ic"><use href="#i-plus"/></svg> Adicionar</button>
+        </div>
+        <p class="hint">Até 2 templates .tex globais reutilizáveis entre vagas.</p>
+        <div id="lib-templates" class="lib-list"></div>
+        <button id="btn-save-template-model" class="ghost sm wide"><svg class="ic"><use href="#i-bookmark"/></svg> Salvar template atual da seção como modelo</button>
+      </div>
+    </section>
+
+    <!-- ===== LLM (config movida p/ dentro do menu; IDs preservados) ===== -->
+    <section class="sidebar-pane" data-pane="llm" hidden>
+      <form id="cfg-panel" onsubmit="return false">
+        <label>Model <input id="cfg-model" placeholder="j (alias) ou vendor:model:thinking"></label>
+        <p class="hint">Aliases: g (openai gpt-5.6-sol), j (google gemini-3.5-flash-lite), s (anthropic claude-sonnet-5), d (deepseek deepseek-v4-flash), x (xai grok-4.5), z (fireworks glm), K (moonshot kimi), c (openai luna)… Spec completo: <code>vendor:model:thinking</code>.</p>
+        <div class="vendors">
+          <div class="vendor-row"><span>openai</span><input id="cfg-key-openai" type="password" placeholder="key"><input id="cfg-url-openai" placeholder="base url (CORS proxy)"></div>
+          <div class="vendor-row"><span>anthropic</span><input id="cfg-key-anthropic" type="password" placeholder="key"><input id="cfg-url-anthropic" placeholder="base url (CORS proxy)"></div>
+          <div class="vendor-row"><span>google</span><input id="cfg-key-google" type="password" placeholder="key"><input id="cfg-url-google" placeholder="base url (CORS proxy)"></div>
+          <div class="vendor-row"><span>deepseek</span><input id="cfg-key-deepseek" type="password" placeholder="key"><input id="cfg-url-deepseek" placeholder="base url (CORS proxy)"></div>
+          <div class="vendor-row"><span>xai</span><input id="cfg-key-xai" type="password" placeholder="key"><input id="cfg-url-xai" placeholder="base url (CORS proxy)"></div>
+          <div class="vendor-row"><span>cerebras</span><input id="cfg-key-cerebras" type="password" placeholder="key"><input id="cfg-url-cerebras" placeholder="base url (CORS proxy)"></div>
+          <div class="vendor-row"><span>fireworks</span><input id="cfg-key-fireworks" type="password" placeholder="key"><input id="cfg-url-fireworks" placeholder="base url (CORS proxy)"></div>
+          <div class="vendor-row"><span>moonshotai</span><input id="cfg-key-moonshotai" type="password" placeholder="key"><input id="cfg-url-moonshotai" placeholder="base url (CORS proxy)"></div>
+          <div class="vendor-row"><span>openrouter</span><input id="cfg-key-openrouter" type="password" placeholder="key"><input id="cfg-url-openrouter" placeholder="base url (CORS proxy)"></div>
+        </div>
+        <button id="btn-cfg-test" type="button"><svg class="ic"><use href="#i-check"/></svg> Testar conexão</button>
+        <p class="hint">Keys e URLs ficam no localStorage do seu navegador (chave do vendor usado pelo model; URLs servem p/ CORS proxy se o provedor não liberar o browser).</p>
+      </form>
+    </section>
+  </div>
+</aside>
+
+<!-- toasts / modais (populados via JS) -->
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<div id="modal-root"></div>
 
 <script src="vendor/swiftlatex/PdfTeXEngine.js"></script>
 <script src="vendor/tell/tell.bundle.js"></script>
 <script src="js/prompts.js"></script>
 <script src="js/llm.js"></script>
+<script src="js/chat.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

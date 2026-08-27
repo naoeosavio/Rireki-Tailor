@@ -1,5 +1,5 @@
 {
   "dependencies": {
-    "@tell-ai/sdk": "0.2.0"
+    "@tell-ai/sdk": "0.2.1"
   }
 }
