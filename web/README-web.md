@@ -35,7 +35,7 @@ resposta com header `fileid: <basename>` (o arquivo vai para `/tex/<fileid>` no 
 | `js/chat.js` | **Chat por seção** ("Assistente da vaga"): histórico por seção, system prompt contextual (vaga/master/CV_OUT/cover/tex), markdown-lite seguro, quick-asks. |
 | `js/prompts.js` | Prompts ATS/cover/tex (idênticos ao CLI; ATS carrega `data/PROMPT_ATS.md`). |
 | `js/llm.js` | Camada LLM via **tell-ai sdk** (`TellSDK.tell`): model alias/spec + keys/urls por vendor, migração de config antigo, teste de conexão, `chatTell()` (modo chat com `system`/`context`, `exec:false`). |
-| `vendor/tell/` | Bundle browser do `@tell-ai/sdk` (IIFE `TellSDK`), copiado do npm (`dist/browser-global.global.js`, v0.2.0). MIT. |
+| `vendor/tell/` | **tell-ai sdk** (v0.2.1) vendored como ESM nativo sem bundler: `browser.js` (cópia de `dist/browser.js`, build ESM self-contained) + `sdk.js` (`export * as TellSDK from "@tell-ai/sdk"` via import map, expõe `window.TellSDK`). MIT. |
 | `css/app.css` | Temas **dark/light** (`data-theme`), design system (botões, cards, stepper, toasts, modais, sidebar, chat), responsivo, `prefers-reduced-motion`. |
 | `vendor/swiftlatex/` | Engine vendored. Patches: endpoint texlive → origin local; `ENGINE_PATH` via `document.currentScript`; `compileFormat` devolvendo os bytes (Uint8Array) do fmt. |
 | `scripts/serve.js` | Dev server + resolvedor kpathsea (ordem `TEX_SUBROOTS` e `TEXMF_DIRS` como o TeXLive), `fix_extension` (ids → extensões), header `fileid`, 301 para MISS, espelho em `web/pdftex/`, `POST /api/upload-fmt`. |
