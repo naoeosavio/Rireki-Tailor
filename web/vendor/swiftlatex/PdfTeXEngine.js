@@ -177,7 +177,7 @@ var PdfTeXEngine = /** @class */ (function () {
                                     var cmd = data['cmd'];
                                     if (cmd !== "compile")
                                         return;
-                                                                        var result = data['result'];
+                                    var result = data['result'];
                                     var log = data['log'];
                                     // const status: number = data['status'] as number;
                                     _this.latexWorkerStatus = EngineStatus.Ready;
@@ -188,7 +188,7 @@ var PdfTeXEngine = /** @class */ (function () {
                                         setTimeout(function () { URL.revokeObjectURL(formatURL_1); }, 30000);
                                         console.log('Download format file via ' + formatURL_1);
                                         const fview = new Uint8Array(formatArray);
-                                                                                resolve(fview);
+                                        resolve(fview);
                                     }
                                     else {
                                         reject(log);

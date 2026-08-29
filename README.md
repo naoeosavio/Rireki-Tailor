@@ -27,7 +27,7 @@ It uses **[tell](https://github.com/naoeosavio/Tell-ai)** — a terminal AI assi
 ## Quick Start
 
 ```bash
-git clone https://github.com/naoeosavio/RirekiTailor.git
+git clone https://github.com/naoeosavio/Rireki-Tailor.git
 cd RirekiTailor
 ```
 
