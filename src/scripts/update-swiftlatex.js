@@ -5,7 +5,7 @@
  * RirekiTailor Web — SwiftLaTeX vendoring updater
  *
  * Downloads a pinned SwiftLaTeX release, extracts the pdftex/dvipdfm engine
- * files into web/vendor/swiftlatex/ and re-applies the local patches:
+ * files into src/vendor/swiftlatex/ and re-applies the local patches:
  *
  *   1. swiftlatexpdftex.js  — texlive_endpoint defaults to same-origin
  *                             (static-hosting safe, no external texlive2 host)
@@ -27,9 +27,10 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+const ROOT = path.resolve(__dirname, '..', '..');
 const WEB_ROOT = path.resolve(__dirname, '..');
 const VENDOR_DIR = path.join(WEB_ROOT, 'vendor', 'swiftlatex');
-const PKG = require(path.join(WEB_ROOT, 'package.json'));
+const PKG = require(path.join(ROOT, 'package.json'));
 const PIN = PKG.config && PKG.config.swiftlatex;
 
 if (!PIN || !PIN.version || !PIN.url) {
@@ -154,8 +155,8 @@ async function download(url) {
       }
     }
 
-    console.log(`\nupdate-swiftlatex: OK — ${PIN.version} vendored into web/vendor/swiftlatex/ (net ${total >= 0 ? '+' : ''}${total} bytes)`);
-    console.log('NOTE: engine change invalidates web/pdftex/10/swiftlatexpdftex.fmt — rebuild it via');
+    console.log(`\nupdate-swiftlatex: OK — ${PIN.version} vendored into src/vendor/swiftlatex/ (net ${total >= 0 ? '+' : ''}${total} bytes)`);
+    console.log('NOTE: engine change invalidates src/pdftex/10/swiftlatexpdftex.fmt — rebuild it via');
     console.log('  test.html?autostart=format (wasm) or re-run: npm run bootstrap');
   } catch (err) {
     console.error(`update-swiftlatex: FAILED — ${err.message}`);

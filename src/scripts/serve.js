@@ -4,10 +4,10 @@
 /*
  * RirekiTailor Web — dev server + TeXLive mirror resolver
  *
- * Serves web/ statically. Handles the SwiftLaTeX engine's texlive requests
+ * Serves src/ statically. Handles the SwiftLaTeX engine's texlive requests
  * (`/pdftex/{kpse_format_id}/{basename}`) by resolving them against a local
  * TeXLive installation (kpathsea-style search) and MIRRORING each resolved
- * file into web/vendor/texlive/pdftex/{id}/{basename}, so the app becomes
+ * file into src/pdftex/{id}/{basename}, so the app becomes
  * fully static/offline-capable after one compile.
  *
  * Usage:
@@ -20,6 +20,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const WEB_ROOT = path.resolve(__dirname, '..');
+const TEST_ROOT = path.resolve(WEB_ROOT, '..', 'test');
 const MIRROR_ROOT = path.join(WEB_ROOT, 'pdftex');
 
 const args = process.argv.slice(2);
@@ -177,8 +178,10 @@ const MIME = {
 function sendStatic(req, res, urlPath) {
   let rel = decodeURIComponent(urlPath);
   if (rel === '/' || rel === '') rel = '/index.html';
-  let abs = path.normalize(path.join(WEB_ROOT, rel));
-  if (!abs.startsWith(WEB_ROOT)) {
+  const base = rel.startsWith('/test') ? TEST_ROOT : WEB_ROOT;
+  let abs = path.normalize(path.join(base, rel));
+  const root = base;
+  if (!abs.startsWith(root)) {
     res.writeHead(403).end('Forbidden');
     return;
   }
@@ -279,7 +282,7 @@ function handle(req, res) {
 server.listen(PORT, () => {
   console.log(`RirekiTailor web: http://localhost:${PORT}`);
   console.log(`TeXLive root:    ${TEXMF}`);
-  console.log(`Mirror mode:     ${MIRROR ? 'ON (arquivos copiados para vendor/texlive)' : 'OFF'}`);
+  console.log(`Mirror mode:     ${MIRROR ? 'ON (arquivos copiados para src/pdftex/)' : 'OFF'}`);
   if (!fs.existsSync(TEXMF)) {
     console.warn(`WARN: ${TEXMF} nao existe. Use --texmf <dir>`);
   }
