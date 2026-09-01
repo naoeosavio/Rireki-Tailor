@@ -197,7 +197,9 @@ function sendStatic(req, res, urlPath) {
   if (rel.startsWith('/test/')) file = rel.slice('/test'.length);
   let abs = path.normalize(path.join(base, file));
   const root = base;
-  if (!abs.startsWith(root)) {
+  /* startsWith(root) aceita irmãos (/x/src-evil passa p/ base /x/src) — exige sep */
+  const inside = abs === root || abs.startsWith(root + path.sep);
+  if (!inside) {
     res.writeHead(403).end('Forbidden');
     return;
   }

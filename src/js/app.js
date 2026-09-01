@@ -87,6 +87,20 @@
     }
   }
 
+  /* Digitação dispara saveAll a cada tecla — serializa TODAS as seções.
+   * Debounce de 400ms; flush no beforeunload garante a última edição. */
+  let saveTimer = null;
+  function saveAllDebounced() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveAll, 400);
+  }
+  function flushPendingSave() {
+    if (saveTimer === null) return;
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    saveAll();
+  }
+
   function migrateConfig(c) {
     const out = {
       model: c.model || 'j',
@@ -610,7 +624,7 @@
   }
 
   async function createSection() {
-    const src = active() || defaultSection();
+    const src = active();
     const def = defaultSection();
     const name = await modal.prompt({
       title: 'Nova seção',
@@ -628,8 +642,12 @@
       def.templateId = src.templateId || null;
       def.pitch = src.pitch;
     } else {
-      def.master = await fetchText(DEFAULT_FILES.masterEn);
-      def.template = await fetchText(DEFAULT_FILES.template);
+      try {
+        def.master = await fetchText(DEFAULT_FILES.masterEn);
+        def.template = await fetchText(DEFAULT_FILES.template);
+      } catch (e) {
+        console.warn('defaults fetch failed', e);
+      }
     }
     const id = 's' + Date.now().toString(36);
     sections[id] = def;
@@ -698,9 +716,11 @@
   }
 
   function exportSections() {
-    const payload = { exportedAt: now(), config, library, sections };
+    /* config sanitizado: model/urls são úteis p/ restaurar; keys nunca saem daqui */
+    const safeConfig = { model: config.model, urls: Object.assign({}, config.urls) };
+    const payload = { exportedAt: now(), config: safeConfig, library, sections };
     download('riki-secoes-' + Date.now() + '.json', JSON.stringify(payload, null, 2), 'application/json');
-    toast('Backup JSON baixado', 'ok');
+    toast('Backup JSON baixado — sem as API keys (por segurança)', 'ok');
   }
 
   async function importSections(file) {
@@ -749,7 +769,7 @@
           }
         }
         touch(s);
-        saveAll();
+        saveAllDebounced();
         if (el.tagName === 'TEXTAREA') updateCounter(key);
       });
     });
@@ -1008,16 +1028,16 @@
   function bindConfig() {
     $('cfg-model').addEventListener('input', () => {
       config.model = $('cfg-model').value.trim() || 'g';
-      saveAll();
+      saveAllDebounced();
     });
     LLM_VENDORS.forEach((v) => {
       $('cfg-key-' + v).addEventListener('input', () => {
         config.keys[v] = $('cfg-key-' + v).value.trim();
-        saveAll();
+        saveAllDebounced();
       });
       $('cfg-url-' + v).addEventListener('input', () => {
         config.urls[v] = $('cfg-url-' + v).value.trim();
-        saveAll();
+        saveAllDebounced();
       });
     });
     $('btn-cfg-test').addEventListener('click', async () => {
@@ -1082,11 +1102,13 @@
         if (!ss) return;
         ss[k] = el.value;
         touch(ss);
-        saveAll();
+        saveAllDebounced();
         updateCounter(k);
       });
     });
     updateAllCounters();
+
+    window.addEventListener('beforeunload', flushPendingSave);
 
     $('btn-new-section').addEventListener('click', createSection);
     $('btn-rename-section').addEventListener('click', renameSection);
