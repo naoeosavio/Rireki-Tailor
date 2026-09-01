@@ -443,6 +443,28 @@
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  function sanitizeEol(text, delim) {
+    const first = text.indexOf(delim);
+    if (first === -1) return text;
+    const after = first + delim.length;
+    const second = text.indexOf(delim, after);
+    if (second === -1) return text;
+    return text.slice(after, second).trim();
+  }
+
+  function sanitizeFenced(text) {
+    const m = text.match(/```[^\n]*\n?([\s\S]*?)```/);
+    return m ? m[1].trim() : text;
+  }
+
+  function sanitizeLatexBody(text) {
+    const delim = '\\end{document}';
+    const i = text.indexOf('\\begin{document}');
+    const j = text.indexOf(delim);
+    if (i === -1 || j === -1) return text;
+    return text.slice(i, j + delim.length).trim();
+  }
+
   function pickFile(accept) {
     return new Promise((res) => {
       const input = document.createElement('input');
@@ -841,7 +863,7 @@
     if (!s.role.trim()) { toast('Cole a descrição da vaga antes de gerar o CV.', 'warn'); return; }
     if (!s.master.trim()) { toast('O CV master está vazio — carregue ou cole um CV.', 'warn'); return; }
     setStatus('Gerando CV_OUT.md (' + config.model + ')…', 'busy');
-    s.cvOut = await tellChat(buildAtsPrompt(s.master, s.lang, s.role), config);
+    s.cvOut = sanitizeFenced(await tellChat(buildAtsPrompt(s.master, s.lang, s.role), config));
     $('cvOut').value = s.cvOut;
     updateCounter('cvOut');
     touch(s); saveAll();
@@ -852,7 +874,7 @@
   async function genCover(s) {
     if (!(s.cvOut.trim() || s.master.trim())) { toast('Gere o CV_OUT.md ou tenha um CV master antes do cover.', 'warn'); return; }
     setStatus('Gerando cover.md (' + config.model + ')…', 'busy');
-    s.cover = await tellChat(buildCoverPrompt(s.cvOut || s.master, s.lang, s.role, s.pitch), config);
+    s.cover = sanitizeFenced(await tellChat(buildCoverPrompt(s.cvOut || s.master, s.lang, s.role, s.pitch), config));
     $('cover').value = s.cover;
     updateCounter('cover');
     touch(s); saveAll();
@@ -864,7 +886,7 @@
     if (!(s.cvOut.trim() || s.master.trim())) { toast('Sem conteúdo markdown para converter.', 'warn'); return; }
     if (!s.template.trim()) { toast('O template LaTeX está vazio — carregue um da biblioteca.', 'warn'); return; }
     setStatus('Convertendo markdown → LaTeX (' + config.model + ')…', 'busy');
-    s.tex = await tellChat(buildTexPrompt(s.cvOut || s.master, s.template), config);
+    s.tex = sanitizeLatexBody(await tellChat(buildTexPrompt(s.cvOut || s.master, s.template), config));
     $('tex').value = s.tex;
     updateCounter('tex');
     touch(s); saveAll();
