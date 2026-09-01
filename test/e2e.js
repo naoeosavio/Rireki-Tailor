@@ -12,7 +12,7 @@ const { chromium } = require('playwright');
   console.log('seções:', await page.$$eval('#section-select option', (o) => o.map((x) => x.textContent)));
 
   await page.click('[data-nav="3"]');
-  const tex = await page.evaluate(() => fetch('data/CV_ATS.tex').then((r) => r.text()));
+  const tex = await page.evaluate(() => fetch('/test/CV_ATS.tex').then((r) => r.text()));
   await page.fill('#tex', tex);
   console.log('tex loaded:', tex.length, 'chars');
 

@@ -178,8 +178,11 @@ const MIME = {
 function sendStatic(req, res, urlPath) {
   let rel = decodeURIComponent(urlPath);
   if (rel === '/' || rel === '') rel = '/index.html';
-  const base = rel.startsWith('/test') ? TEST_ROOT : WEB_ROOT;
-  let abs = path.normalize(path.join(base, rel));
+  const isTest = rel === '/test.html' || rel.startsWith('/test/');
+  const base = isTest ? TEST_ROOT : WEB_ROOT;
+  let file = rel;
+  if (rel.startsWith('/test/')) file = rel.slice('/test'.length);
+  let abs = path.normalize(path.join(base, file));
   const root = base;
   if (!abs.startsWith(root)) {
     res.writeHead(403).end('Forbidden');

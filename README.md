@@ -39,7 +39,7 @@ resposta com header `fileid: <basename>` (o arquivo vai para `/tex/<fileid>` no 
 | `src/css/app.css` | Temas **dark/light** (`data-theme`), design system (botões, cards, stepper, toasts, modais, sidebar, chat), responsivo, `prefers-reduced-motion`. |
 | `src/vendor/swiftlatex/` | Engine vendored. Patches: endpoint texlive → origin local; `ENGINE_PATH` via `document.currentScript`; `compileFormat` devolvendo os bytes (Uint8Array) do fmt. |
 | `src/scripts/serve.js` | Dev server + resolvedor kpathsea (ordem `TEX_SUBROOTS` e `TEXMF_DIRS` como o TeXLive), `fix_extension` (ids → extensões), header `fileid`, 301 para MISS, espelho em `src/pdftex/`, `POST /api/upload-fmt`. |
-| `test/test.html` | Harness de diagnóstico: carrega o engine, compila `data/CV_ATS.tex`, reconstrói o formato. `?autostart=format` / `?autostart=compile`. |
+| `test/test.html` | Harness de diagnóstico: carrega o engine, compila `test/CV_ATS.tex`, reconstrói o formato. `?autostart=format` / `?autostart=compile`. |
 | `test/smoke.js` / `e2e.js` | Playwright: UI (temas, sidebar/biblioteca, modais, chat, persistência, export) e compile completo do PDF. |
 | `test/bootstrap.js` | Playwright: fluxo completo headless (build do fmt + compile) — usado para popular o espelho. |
 | `test/probe.js` / `verify.js` | Diagnóstico: compile headless com logs do servidor / verificação do PDF gerado. |
