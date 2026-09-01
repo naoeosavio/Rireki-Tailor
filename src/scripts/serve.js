@@ -175,6 +175,19 @@ const MIME = {
   '.woff2': 'font/woff2',
 };
 
+/* Stream -> resposta, com cleanup: se o cliente abortar, destrói o stream
+ * (libera fd/buffers); erro de leitura destrói a resposta em vez de derrubar
+ * o processo. Sem isso, aborts repetidos vazam memória/fds no server. */
+function pipeFile(res, file) {
+  const stream = fs.createReadStream(file);
+  stream.on('error', (err) => {
+    console.error('[stream] erro lendo', file, '-', err.message);
+    res.destroy();
+  });
+  res.on('close', () => stream.destroy());
+  stream.pipe(res);
+}
+
 function sendStatic(req, res, urlPath) {
   let rel = decodeURIComponent(urlPath);
   if (rel === '/' || rel === '') rel = '/index.html';
@@ -198,7 +211,7 @@ function sendStatic(req, res, urlPath) {
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-store',
     });
-    fs.createReadStream(abs).pipe(res);
+    pipeFile(res, abs);
   });
 }
 
@@ -244,7 +257,7 @@ function handle(req, res) {
       };
       if (!process.env.TEXLIVE_NO_FILEID) headers['fileid'] = fileId;
       res.writeHead(200, headers);
-      fs.createReadStream(file).pipe(res);
+      pipeFile(res, file);
     };
     if (!abs) {
       serveFile(mirrored, 'MIRRORED');
@@ -256,10 +269,27 @@ function handle(req, res) {
   }
 
   if (url.pathname === '/api/upload-fmt') {
+    const MAX_FMT = 128 * 1024 * 1024; // fmt real ~40MB; headroom p/ abusos
     const chunks = [];
-    req.on('data', (c) => chunks.push(c));
+    let size = 0;
+    let done = false;
+    req.on('data', (c) => {
+      if (done) return;
+      size += c.length;
+      if (size > MAX_FMT) {
+        done = true;
+        chunks.length = 0;
+        res.writeHead(413).end('Payload grande demais');
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
     req.on('end', () => {
+      if (done) return;
+      done = true;
       const buf = Buffer.concat(chunks);
+      chunks.length = 0;
       const target = path.join(WEB_ROOT, 'pdftex', '10', 'swiftlatexpdftex.fmt');
       if (!buf.length || buf.length < 1000) {
         res.writeHead(400).end('Payload invalido');
@@ -270,6 +300,9 @@ function handle(req, res) {
       console.log(`[mirror] fmt gravado: ${target} (${buf.length} bytes)`);
       res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok');
     });
+    /* upload abortado: solta os buffers na hora, sem esperar o GC */
+    req.on('aborted', () => { done = true; chunks.length = 0; });
+    req.on('close', () => { done = true; chunks.length = 0; });
     return;
   }
 
