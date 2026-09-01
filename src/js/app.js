@@ -34,6 +34,7 @@
   let engine = null;
   let enginePromise = null;
   let pdfUrl = null;
+  let pdfSectionId = null;
 
   const $ = (id) => document.getElementById(id);
   const step = (n) => document.querySelectorAll('.panel')[n - 1];
@@ -143,6 +144,8 @@
   function log(...lines) {
     const el = $('log');
     el.textContent += lines.join('\n') + '\n';
+    const ls = el.textContent.split('\n');
+    if (ls.length > 200) el.textContent = ls.slice(-200).join('\n');
     el.scrollTop = el.scrollHeight;
   }
 
@@ -459,7 +462,7 @@
 
   function sanitizeLatexBody(text) {
     const delim = '\\end{document}';
-    const i = text.indexOf('\\begin{document}');
+    const i = text.indexOf('\\documentclass');
     const j = text.indexOf(delim);
     if (i === -1 || j === -1) return text;
     return text.slice(i, j + delim.length).trim();
@@ -822,13 +825,25 @@
     applyLibToSection(kind, v);
   }
 
+  function hidePdf() {
+    if (pdfUrl) { URL.revokeObjectURL(pdfUrl); pdfUrl = null; }
+    pdfSectionId = null;
+    const viewer = $('viewer');
+    if (viewer) {
+      viewer.removeAttribute('src');
+      viewer.style.display = 'none';
+    }
+  }
+
   function fillStep1() {
     const s = active();
     if (!s) { $('step1-empty').style.display = 'block'; return; }
     $('step1-empty').style.display = 'none';
     ['role', 'master', 'template', 'pitch'].forEach((k) => { $(k).value = s[k]; });
+    ['cvOut', 'cover', 'tex'].forEach((k) => { $(k).value = s[k] || ''; });
     $('lang').value = s.lang;
     $('genCover').checked = s.genCover;
+    if (pdfSectionId !== activeId) hidePdf();
     renderLibSelects();
     updateAllCounters();
     if (window.Chat) Chat.render();
@@ -934,6 +949,7 @@
       eng.writeMemFSFile('main.tex', s.tex);
       eng.setEngineMainFile('main.tex');
       const res = await eng.compileLaTeX();
+      try { eng.flushCache(); } catch (_) { /* engine pode não estar pronta */ }
       log('status:', res.status, '(' + ((performance.now() - t0) / 1000).toFixed(0) + 's)');
       if (res.status === 0) {
         showPdf(res.pdf);
@@ -960,6 +976,7 @@
     const viewer = $('viewer');
     if (pdfUrl) URL.revokeObjectURL(pdfUrl);
     pdfUrl = URL.createObjectURL(new Blob([uint8], { type: 'application/pdf' }));
+    pdfSectionId = activeId;
     viewer.src = pdfUrl;
     viewer.style.display = 'block';
   }

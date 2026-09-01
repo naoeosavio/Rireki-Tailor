@@ -130,14 +130,16 @@ Study the LaTeX template below. **IGNORE all sample/placeholder content** — na
 
 - **Section order and hierarchy:** Which sections exist (Skills, Education, Experience, Awards, Languages, etc.) and in what order do they appear?
 - **Layout pattern per section:** How is each section laid out?
-  - e.g. Skills -> \\begin{center}\\begin{multicols}{N}\\cvlistitem{...}{...}...\\end{multicols}\\end{center}
-  - e.g. Education -> \\begin{multicols}{2}\\cvuniversity{...}{...}{...}{...}\\begin{itemize}...\\end{itemize}\\columnbreak...\\end{multicols}
+  - e.g. Skills -> \\begin{multicols}{N}\\cvlistitem{...}{...}...\\end{multicols}
+  - e.g. Education -> \\begin{multicols}{N}\\cvuniversity{...}{...}{...}{...}\\begin{itemize}...\\end{itemize}\\columnbreak...\\end{multicols}
   - e.g. Experience -> \\cvexperience{...}{...}{...}{...}{...}\\begin{itemize}...\\end{itemize}\\divider
-  - e.g. Languages -> \\begin{multicols}{3}\\cvlistitem{...}{...}\\columnbreak...\\end{multicols}
+  - e.g. Languages -> \\begin{multicols}{N}\\cvlistitem{...}{...}\\columnbreak...\\end{multicols}
+  - e.g. Projects -> \\cvproject{...}{...}{...}\\begin{itemize}...\\end{itemize}
 - **Macro signatures:** How many arguments does each command take and what do they represent?
   - \\cvexperience{Title}{Company}{Dates}{Location}{Tags/Keywords}
   - \\cvuniversity{Degree}{Institution}{Dates}{Location}
   - \\cvlistitem{Label}{Description}
+  - \\cvproject{Title}{Description}{Tags/Keywords}
   - \\divider (no arguments, horizontal rule separator)
   - \\cvsection{Title}, \\cvsubsection{Title}, \\bio{...}
   - Header: \\name{...}, \\tagline{...}, \\personalinfo{...}, \\email{...}, \\linkedin{...}, \\github{...}, \\location{...}, \\makecvheader
