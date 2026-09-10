@@ -1,9 +1,29 @@
-.env
-*.log
-out/
-temp/
-__pycache__/
-.DS_Store
-Fullstack
-node*
-*-lock*
+# Ignore everything by default
+*
+
+# Re-include distribution output and metadata
+!examples/*
+!examples/**/*
+!examples/
+!docs/examples/*
+!docs/**/*
+!docs/*
+!docs/
+!src/
+!src/**
+!src/**
+!src/**/*
+!src/*
+!test/*
+!test/
+!package.json
+!README*
+!CONTRIBUTING*
+!LICENSE*
+!.gitignore
+!tsconfig*
+!tsup*
+!CHANGELOG*
+!AGENTS.md
+
+# Monorepo workspace packages

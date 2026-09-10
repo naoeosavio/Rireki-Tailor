@@ -104,9 +104,11 @@ resposta com header `fileid: <basename>` (o arquivo vai para `/tex/<fileid>` no 
   no-exec, modelo por alias ou spec completo (`j`, `d`, `g`, `openai:gpt-5.6-sol:high`…),
   tags ` thinking`/`<RUN>` removidas, one-shot (sem streaming).
 - **Config global** no painel "LLM": campo Model (default `j` = google:gemini-3.5-flash-lite)
-  + grade de 9 vendors (openai, anthropic, google, deepseek, xai, cerebras, fireworks,
-  moonshotai, openrouter) com key e base URL (URLs servem para CORS proxy quando o provedor
-  não libera chamadas de browser). Tudo no localStorage.
+  + grade de 13 vendors (openai, anthropic, google, deepseek, xai, cerebras, fireworks,
+  moonshotai, openrouter, alibaba, zai, vast, local) com key e base URL. As URLs já vêm **pré-preenchidas**
+  com os endpoints oficiais (via direta); se o browser bloquear, troque o campo
+  pela URL do seu proxy CORS (segunda via). Detalhes em `docs/llm-base-url.md`.
+  Tudo no localStorage.
 - Migração automática do config antigo (`apiKey`→`keys.openai`, `baseURL`→`urls.openai`).
 - O bundle IIFE do SDK é self-contained (define `process` próprio, sem `require()` de
   node builtins) — carrega direto no browser, sem shims.

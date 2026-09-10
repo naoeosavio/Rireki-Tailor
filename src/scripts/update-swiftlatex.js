@@ -7,8 +7,9 @@
  * Downloads a pinned SwiftLaTeX release, extracts the pdftex/dvipdfm engine
  * files into src/vendor/swiftlatex/ and re-applies the local patches:
  *
- *   1. swiftlatexpdftex.js  — texlive_endpoint defaults to same-origin
- *                             (static-hosting safe, no external texlive2 host)
+ *   1. swiftlatexpdftex.js  — texlive_endpoint defaults to site root
+ *                             (static-hosting safe, no external texlive2 host,
+ *                             subdirectory-aware for GitHub Pages)
  *   2. PdfTeXEngine.js      — ENGINE_PATH resolved from document.currentScript
  *                             (works under any base path / subdirectory)
  *   3. PdfTeXEngine.js      — compileFormat() resolves with the fmt bytes
@@ -46,9 +47,16 @@ const FILES = [
   { name: 'swiftlatexdvipdfm.wasm' },
 ];
 
+// Worker lives three segments below site root (vendor/swiftlatex/file),
+// so strip them to support subdirectory hosting such as GitHub Pages.
 const PATCH_ENDPOINT = {
   from: 'self.texlive_endpoint="https://texlive2.swiftlatex.com/"',
-  to: 'self.texlive_endpoint=(self.location&&self.location.origin)?(self.location.origin+"/"):"/"',
+  to:
+    'self.texlive_endpoint=(function(){try{var u=new URL(' +
+    'self.location.href),x=u.pathname.split("/").filter(Boolean);' +
+    'if(x.length>=3)x=x.slice(0,x.length-3);' +
+    'return u.origin+(x.length?"/"+x.join("/")+"/":"/")}' +
+    'catch(err){return"/"}})()',
 };
 
 const PATCH_ENGINE_PATH = {
@@ -85,7 +93,7 @@ const PATCH_COMPILE_FORMAT = {
 const VERIFY = [
   { file: 'PdfTeXEngine.js', text: "new URL('swiftlatexpdftex.js', document.currentScript.src)" },
   { file: 'PdfTeXEngine.js', text: 'resolve(fview);' },
-  { file: 'swiftlatexpdftex.js', text: '(self.location&&self.location.origin)' },
+  { file: 'swiftlatexpdftex.js', text: 'new URL(self.location.href)' },
 ];
 
 function patchOnce(content, { from, to }, label) {
@@ -101,7 +109,7 @@ function patchOnce(content, { from, to }, label) {
 
 function applyPatches(name, content) {
   if (name === 'swiftlatexpdftex.js') {
-    return patchOnce(content, PATCH_ENDPOINT, 'texlive_endpoint same-origin');
+    return patchOnce(content, PATCH_ENDPOINT, 'texlive_endpoint site-root');
   }
   if (name === 'PdfTeXEngine.js') {
     let out = patchOnce(content, PATCH_ENGINE_PATH, 'ENGINE_PATH from document.currentScript');

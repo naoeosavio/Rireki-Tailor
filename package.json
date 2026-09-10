@@ -40,7 +40,7 @@
   },
   "homepage": "https://github.com/naoeosavio/Rireki-Tailor#readme",
   "dependencies": {
-    "@tell-ai/sdk": "0.2.1"
+    "@tell-ai/sdk": "0.2.2"
   },
   "devDependencies": {
     "playwright": "1.62.1"

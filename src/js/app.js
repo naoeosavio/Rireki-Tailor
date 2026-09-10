@@ -101,6 +101,8 @@
     saveAll();
   }
 
+  // Backfills DEFAULT_URLS (llm.js loads before app.js) so the URL
+  // fields render pre-filled; user edits win over defaults.
   function migrateConfig(c) {
     const out = {
       model: c.model || 'j',
@@ -109,6 +111,9 @@
     };
     if (c.apiKey && !out.keys.openai) out.keys.openai = c.apiKey;
     if (c.baseURL && !out.urls.openai) out.urls.openai = c.baseURL;
+    LLM_VENDORS.forEach((v) => {
+      if (!out.urls[v] && DEFAULT_URLS[v]) out.urls[v] = DEFAULT_URLS[v];
+    });
     return out;
   }
 
