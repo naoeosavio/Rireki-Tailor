@@ -107,7 +107,7 @@ test('load: a corrupt riki.sections keeps the config keys and does not persist a
   const persisted = await page.evaluate(() => JSON.parse(localStorage.getItem('riki.sections')));
   assert.strictEqual(Object.keys(persisted).length, 1, 'expected exactly the auto-created recovery section');
   const recovered = Object.keys(persisted).map((k) => persisted[k])[0];
-  assert.strictEqual(recovered.name, 'Padrão', 'the app did not recover with a working section');
+  assert.strictEqual(recovered.name, 'Default', 'the app did not recover with a working section');
   assert.ok(Array.isArray(recovered.chat), 'the recovery section is not normalized');
   assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
 });
@@ -188,7 +188,7 @@ test('engine: a failed loadEngine is retried on the next compile', async (page) 
       const original = inst.loadEngine.bind(inst);
       inst.loadEngine = function () {
         window.__engine_calls++;
-        if (window.__engine_calls === 1) return Promise.reject(new Error('falha de rede simulada'));
+        if (window.__engine_calls === 1) return Promise.reject(new Error('simulated network failure'));
         return original();
       };
       return inst;
@@ -198,11 +198,11 @@ test('engine: a failed loadEngine is retried on the next compile', async (page) 
   await page.click('[data-nav="3"]');
   await page.click('#btn-compile');
   await page.waitForFunction(
-    () => document.getElementById('status').textContent.includes('ERRO'),
+    () => document.getElementById('status').textContent.includes('ERROR'),
     null,
     { timeout: 60000 }
   );
-  assert.ok((await page.textContent('#status')).includes('falha de rede simulada'), 'first failure not surfaced');
+  assert.ok((await page.textContent('#status')).includes('simulated network failure'), 'first failure not surfaced');
 
   await page.click('#btn-compile');
   await page.waitForFunction(
@@ -302,7 +302,7 @@ test('modal: confirmText labels the confirmation button', async (page) => {
   await page.click('#btn-del-section');
   await page.waitForSelector('.modal-foot button', { timeout: 5000 });
   const labels = await page.$$eval('.modal-foot button', (b) => b.map((x) => x.textContent));
-  assert.ok(labels.indexOf('Excluir') !== -1, 'expected an "Excluir" button, got ' + JSON.stringify(labels));
+  assert.ok(labels.indexOf('Delete') !== -1, 'expected a "Delete" button, got ' + JSON.stringify(labels));
   await page.click('.modal-foot button:not(.danger)');
 });
 
@@ -340,7 +340,7 @@ test('load: a backup-shaped payload with injected config is normalized', async (
 });
 
 /* ================================================================== *
- * storage indisponível: get/set lançando não pode matar o app
+ * storage unavailable: throwing get/set must not kill the app
  * ================================================================== */
 
 test('load: a throwing localStorage does not brick the app', async (page) => {
@@ -369,7 +369,7 @@ test('load: a throwing localStorage does not brick the app', async (page) => {
 });
 
 /* ================================================================== *
- * libDebouncedSave(): fechar a aba não pode perder a edição da biblioteca
+ * libDebouncedSave(): closing the tab must not lose the library edit
  * ================================================================== */
 
 test('save: a library edit is flushed on beforeunload', async (page) => {
@@ -388,7 +388,7 @@ test('save: a library edit is flushed on beforeunload', async (page) => {
 });
 
 /* ================================================================== *
- * uploads: arquivo gigante é recusado antes de qualquer leitura
+ * uploads: a gigantic file is rejected before any read
  * ================================================================== */
 
 test('upload: an oversized file is refused with a warning', async (page) => {
@@ -406,7 +406,7 @@ test('upload: an oversized file is refused with a warning', async (page) => {
     await chooser.setFiles(big);
     await page.waitForTimeout(600);
     const toasts = await page.$$eval('.toast', (t) => t.map((x) => x.textContent).join(' '));
-    assert.ok(/grande|limite/i.test(toasts), 'no oversize warning, got: ' + toasts.slice(0, 160));
+    assert.ok(/large|limit/i.test(toasts), 'no oversize warning, got: ' + toasts.slice(0, 160));
     const len = await page.$eval('#master', (el) => el.value.length);
     assert.ok(len < 100, 'oversized file polluted the section (' + len + ' chars)');
     assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');

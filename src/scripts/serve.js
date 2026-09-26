@@ -23,8 +23,8 @@ const WEB_ROOT = path.resolve(__dirname, '..');
 const TEST_ROOT = path.resolve(WEB_ROOT, '..', 'test');
 const MIRROR_ROOT = path.join(WEB_ROOT, 'pdftex');
 
-/* fmt gravado por /api/upload-fmt. O formato web2c comeca com a magic
- * "XT2W" (0x58543257) — sem ela o payload e' lixo. */
+/* fmt written by /api/upload-fmt. A web2c format starts with the
+ * "XT2W" magic (0x58543257) — without it the payload is garbage. */
 const FMT_MAGIC = Buffer.from([0x58, 0x54, 0x32, 0x57]);
 const FMT_MIN_BYTES = 1000;
 const FMT_MAX_BYTES = 64 * 1024 * 1024;
@@ -37,22 +37,22 @@ const argOf = (name, dflt) => {
 const PORT = (() => {
   const raw = argOf('--port', '8080');
   const v = parseInt(raw, 10);
-  /* 0 = porta efêmera (os testes usam); fora de 0-65535 é erro de digitação. */
+  /* 0 = ephemeral port (the tests use it); outside 0-65535 is a typo. */
   if (!Number.isInteger(v) || v < 0 || v > 65535) {
     console.error('invalid --port (use 0-65535): ' + raw);
     process.exit(2);
   }
   return v;
 })();
-/* Loopback por padrao: o servidor expoe o fonte inteiro com CORS aberto e
- * tem um endpoint de escrita. Quem quiser acesso pela LAN passa
- * --host 0.0.0.0 explicitamente. */
+/* Loopback by default: the server exposes the entire source tree with open
+ * CORS and has a write endpoint. Anyone wanting LAN access must pass
+ * --host 0.0.0.0 explicitly. */
 const HOST = argOf('--host', '127.0.0.1');
 const TEXMF = path.resolve(argOf('--texmf', '/usr/share/texlive/texmf-dist'));
 const FMT_TARGET = path.resolve(
   argOf('--fmt-target', path.join(MIRROR_ROOT, '10', 'swiftlatexpdftex.fmt'))
 );
-/* Ordem kpathsea (texmf.cnf Debian): TEXMFSYSVAR (/var/lib/texmf), TEXMFDEBIAN
+/* kpathsea order (Debian texmf.cnf): TEXMFSYSVAR (/var/lib/texmf), TEXMFDEBIAN
  * (/usr/share/texmf), TEXMFDIST. */
 const TEXMF_DIRS = [
   path.resolve(argOf('--texmf-extra', '/var/lib/texmf')),
@@ -104,8 +104,8 @@ const FORMAT_ROOTS = {
 };
 const DEFAULT_ROOTS = [...TEX_SUBROOTS, 'fonts', 'web2c', 'bibtex', 'makeindex', 'dvips'];
 
-/* fix_extension: o wasm (kpseemu.c) anexa a extensao do formato ao nome
- * localmente e envia o nome ORIGINAL ao JS; replicamos aqui. */
+/* fix_extension: the wasm (kpseemu.c) appends the format's extension to the
+ * name locally and sends the ORIGINAL name to JS; we replicate that here. */
 const FORMAT_EXT = {
   0: '.gf', 1: '.pk', 3: '.tfm', 4: '.afm', 5: '.base', 6: '.bib', 7: '.bst',
   10: '.fmt', 11: '.map', 12: '.mem', 13: '.mf', 15: '.mft', 16: '.mp',
@@ -116,11 +116,11 @@ const FORMAT_EXT = {
   54: '.mlbib', 55: '.mlbst', 57: '.ris', 58: '.bltxml',
 };
 
-/* Ids de formato kpathsea reais (o enum de texlive-source/texk/kpathsea/types.h
- * coberto por FORMAT_ROOTS + FORMAT_EXT). Ids fora daqui nunca vêm do engine:
- * responder 404 direto evita varrer a árvore TeXLive à toa (N raízes por
- * request, síncrono, bloqueando o loop — qualquer página visitada pelo dev
- * poderia disparar via CORS *). */
+/* Real kpathsea format ids (the enum in texlive-source/texk/kpathsea/types.h
+ * covered by FORMAT_ROOTS + FORMAT_EXT). Ids outside this set never come from
+ * the engine: answering 404 directly avoids sweeping the TeXLive tree for
+ * nothing (N roots per request, synchronous, blocking the loop — any page the
+ * dev visits could trigger it via CORS *). */
 const KNOWN_FORMAT_IDS = new Set(
   Object.keys(FORMAT_ROOTS).concat(Object.keys(FORMAT_EXT)).map((k) => parseInt(k, 10))
 );
@@ -218,8 +218,9 @@ function isSameOrigin(req) {
     return false;
   }
   const host = String(req.headers.host || '');
-  /* DNS é case-insensitive: LOCALHOST e localhost são o mesmo host. Sem o
-   * toLowerCase, um same-origin legítimo com caixa diferente tomava 403. */
+  /* DNS is case-insensitive: LOCALHOST and localhost are the same host.
+   * Without the toLowerCase, a legitimate same-origin request with different
+   * casing got a 403. */
   return host !== '' && parsed.host.toLowerCase() === host.toLowerCase();
 }
 
@@ -256,13 +257,14 @@ const MIME = {
   '.woff2': 'font/woff2',
 };
 
-/* Stream -> resposta, com cleanup: se o cliente abortar, destrói o stream
- * (libera fd/buffers); erro de leitura destrói a resposta em vez de derrubar
- * o processo. Sem isso, aborts repetidos vazam memória/fds no server. */
+/* Stream -> response, with cleanup: if the client aborts, destroy the stream
+ * (releasing fd/buffers); a read error destroys the response instead of
+ * bringing down the process. Without this, repeated aborts leak memory/fds
+ * on the server. */
 function pipeFile(res, file) {
   const stream = fs.createReadStream(file);
   stream.on('error', (err) => {
-    console.error('[stream] erro lendo', file, '-', err.message);
+    console.error('[stream] read error', file, '-', err.message);
     res.destroy();
   });
   res.on('close', () => stream.destroy());
@@ -302,18 +304,19 @@ function sendStatic(req, res, urlPath) {
  * http server
  * ------------------------------------------------------------------ */
 /* ------------------------------------------------------------------ *
- * POST /api/upload-fmt — grava o .fmt gerado no browser.
+ * POST /api/upload-fmt — writes the .fmt generated in the browser.
  *
- * Endereco de escrita sem autenticacao, entao precisa de guarda de origem
- * (CSRF), validacao de payload e limite de tamanho. O corpo vai para um
- * arquivo temporario e so substitui o alvo via rename: um upload abortado
- * ou gigante nunca deixa o .fmt truncado, e a RAM nao segura o payload.
+ * An unauthenticated write endpoint, so it needs an origin guard (CSRF),
+ * payload validation and a size limit. The body goes to a temp file and
+ * only replaces the target via rename: an aborted or gigantic upload never
+ * leaves a truncated .fmt, and RAM never holds the payload.
  * ------------------------------------------------------------------ */
 let fmtUploadBusy = false;
 
-/* Upload parado com o slot ocupado trava o endpoint para todo mundo (só há
- * 1 upload por vez). O timer morre sozinho em 60 s sem dados — sem ele, um
- * slowloris ou um close sem 'aborted' segurava o 409 para sempre. */
+/* An upload stuck while the slot is busy locks the endpoint for everyone
+ * (there is only 1 upload at a time). The timer dies on its own after 60 s
+ * with no data — without it, a slowloris or a close without 'aborted' would
+ * hold the 409 forever. */
 const UPLOAD_TIMEOUT_MS = (() => {
   const v = parseInt(argOf('--upload-timeout-ms', '60000'), 10);
   return Number.isFinite(v) && v > 0 ? v : 60000;
@@ -325,11 +328,11 @@ function handleFmtUpload(req, res) {
     return;
   }
   if (!isSameOrigin(req)) {
-    res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Origem nao permitida');
+    res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Origin not allowed');
     return;
   }
   if (fmtUploadBusy) {
-    res.writeHead(409, { 'Content-Type': 'text/plain' }).end('Outro upload em andamento');
+    res.writeHead(409, { 'Content-Type': 'text/plain' }).end('Another upload in progress');
     return;
   }
   fmtUploadBusy = true;
@@ -345,7 +348,7 @@ function handleFmtUpload(req, res) {
   const discard = () => {
     clearIdle();
     sink.destroy();
-    try { fs.unlinkSync(tmpPath); } catch (_) { /* ja removido */ }
+    try { fs.unlinkSync(tmpPath); } catch (_) { /* already removed */ }
     fmtUploadBusy = false;
   };
   const reject = (code, message) => {
@@ -364,9 +367,9 @@ function handleFmtUpload(req, res) {
         fs.mkdirSync(path.dirname(FMT_TARGET), { recursive: true });
         fs.renameSync(tmpPath, FMT_TARGET);
       } catch (err) {
-        console.error('[fmt] falha ao gravar:', err.message);
+        console.error('[fmt] write failed:', err.message);
         discard();
-        res.writeHead(500, { 'Content-Type': 'text/plain' }).end('Falha ao gravar o fmt');
+        res.writeHead(500, { 'Content-Type': 'text/plain' }).end('Failed to write the fmt');
         return;
       }
       fmtUploadBusy = false;
@@ -376,13 +379,13 @@ function handleFmtUpload(req, res) {
   };
 
   sink.on('error', (err) => {
-    console.error('[fmt] erro de escrita:', err.message);
-    reject(500, 'Falha ao gravar o fmt');
+    console.error('[fmt] write error:', err.message);
+    reject(500, 'Failed to write the fmt');
   });
   const armIdle = () => {
     clearIdle();
     idle = setTimeout(() => {
-      reject(408, 'Upload expirou sem dados');
+      reject(408, 'Upload expired with no data');
       setImmediate(() => req.destroy());
     }, UPLOAD_TIMEOUT_MS);
   };
@@ -394,7 +397,7 @@ function handleFmtUpload(req, res) {
       head = Buffer.concat([head, chunk]).subarray(0, FMT_MAGIC.length);
     }
     if (size > FMT_MAX_BYTES) {
-      reject(413, 'Payload grande demais');
+      reject(413, 'Payload too large');
       setImmediate(() => req.destroy());
       return;
     }
@@ -402,14 +405,15 @@ function handleFmtUpload(req, res) {
   });
   req.on('end', () => {
     if (settled) return;
-    if (size < FMT_MIN_BYTES) { reject(400, 'Payload invalido'); return; }
-    if (!head.equals(FMT_MAGIC)) { reject(400, 'Payload nao parece um fmt web2c'); return; }
+    if (size < FMT_MIN_BYTES) { reject(400, 'Invalid payload'); return; }
+    if (!head.equals(FMT_MAGIC)) { reject(400, 'Payload does not look like a web2c fmt'); return; }
     commit();
   });
-  /* upload abortado: solta o temporario na hora, sem esperar o GC */
+  /* aborted upload: drop the temp file immediately, without waiting for GC */
   req.on('aborted', () => { settled = true; discard(); });
-  /* 'aborted' nem sempre dispara (timeout do servidor, half-open): o 'close'
-   * sem settle libera o slot do mesmo jeito, sem tocar na resposta. */
+  /* 'aborted' does not always fire (server timeout, half-open): a 'close'
+   * without settle frees the slot the same way, without touching the
+   * response. */
   req.on('close', () => {
     if (settled) return;
     settled = true;
@@ -432,8 +436,8 @@ const server = http.createServer((req, res) => {
 });
 
 function handle(req, res) {
-  /* Host malformado (ou request-target estranha) quebra o parser de URL:
-   * isso é request ruim (400), nunca erro interno (500). */
+  /* A malformed Host (or a strange request-target) breaks the URL parser:
+   * that is a bad request (400), never an internal error (500). */
   let url;
   try {
     url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -455,8 +459,8 @@ function handle(req, res) {
       res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Unknown format');
       return;
     }
-    /* O pathname do URL parser mantem %2f, entao o segmento precisa ser
-     * decodificado E validado: sem isso, "..%2f..%2f" viraria traversal. */
+    /* The URL parser's pathname keeps %2f, so the segment must be decoded
+     * AND validated: without this, "..%2f..%2f" would become traversal. */
     const basename = decodePathSegment(rawBasename);
     if (basename === null || !isPlainBasename(basename)) {
       res.writeHead(400, { 'Content-Type': 'text/plain' }).end('Bad basename');
@@ -510,11 +514,11 @@ server.listen(PORT, HOST, () => {
   console.log(`listening: ${shown}:${addr.port}`);
   console.log(`RirekiTailor web: http://${HOST}:${PORT}`);
   console.log(`TeXLive root:    ${TEXMF}`);
-  console.log(`Mirror mode:     ${MIRROR ? 'ON (arquivos copiados para src/pdftex/)' : 'OFF'}`);
+  console.log(`Mirror mode:     ${MIRROR ? 'ON (files copied into src/pdftex/)' : 'OFF'}`);
   if (HOST !== '127.0.0.1' && HOST !== 'localhost' && HOST !== '::1') {
-    console.warn(`WARN: escutando em ${HOST} — qualquer host da rede pode ler o fonte e escrever em src/pdftex/.`);
+    console.warn(`WARN: listening on ${HOST} — any host on the network can read the source and write into src/pdftex/.`);
   }
   if (!fs.existsSync(TEXMF)) {
-    console.warn(`WARN: ${TEXMF} nao existe. Use --texmf <dir>`);
+    console.warn(`WARN: ${TEXMF} does not exist. Use --texmf <dir>`);
   }
 });

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-/* Probe: testa compileLaTeX direto (sem compileFormat) num browser novo */
+/* Probe: tests compileLaTeX directly (without compileFormat) in a fresh browser */
 const { chromium } = require('playwright');
 const fs = require('fs');
 const BASE = 'http://localhost:8080';
@@ -23,10 +23,10 @@ const BASE = 'http://localhost:8080';
     }
     return 'TIMEOUT(' + txt + ')';
   };
-  console.log('engine:', await wait('engine pronto', 120000));
+  console.log('engine:', await wait('engine ready', 120000));
   console.log('click compile...');
   await page.click('#btn-compile');
-  console.log('compile:', await wait('ERRO', 600000));
+  console.log('compile:', await wait('ERROR', 600000));
   const log = await page.textContent('#log');
   fs.writeFileSync('/tmp/opencode/bootstrap/probe-log.txt', log);
   console.log('--- log tail ---');

@@ -1,5 +1,5 @@
 /* ============================================================
-   RirekiTailor Web — tema dark/light, componentes de UI
+   RirekiTailor Web — dark/light theme, UI components
    ============================================================ */
 
 :root {
@@ -99,7 +99,7 @@ a:hover { text-decoration: underline; }
 .warn { color: var(--warn); }
 .meta { color: var(--muted); font-size: .78em; }
 
-/* ---------- progresso global ---------- */
+/* ---------- global progress ---------- */
 .progress {
   position: fixed; inset: 0 0 auto 0; height: 3px; z-index: 200;
   background: transparent; pointer-events: none;
@@ -235,7 +235,7 @@ main { padding: 18px 20px 26px; }
   padding: 12px 14px; border-radius: var(--radius);
 }
 
-/* ---------- botões ---------- */
+/* ---------- buttons ---------- */
 button {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   background: var(--bg3); color: var(--fg);
@@ -360,7 +360,7 @@ textarea::placeholder, input::placeholder { color: color-mix(in srgb, var(--mute
 @keyframes toast-in { from { opacity: 0; transform: translateX(24px); } }
 @keyframes toast-out { to { opacity: 0; transform: translateY(-8px); } }
 
-/* ---------- modais ---------- */
+/* ---------- modals ---------- */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 300;
   background: var(--backdrop);
@@ -388,7 +388,7 @@ textarea::placeholder, input::placeholder { color: color-mix(in srgb, var(--mute
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes modal-in { from { opacity: 0; transform: scale(.94) translateY(8px); } }
 
-/* ---------- sidebar (menu global) ---------- */
+/* ---------- sidebar (global menu) ---------- */
 .sidebar-backdrop {
   position: fixed; inset: 0; z-index: 240;
   background: var(--backdrop);
@@ -445,7 +445,7 @@ textarea::placeholder, input::placeholder { color: color-mix(in srgb, var(--mute
 }
 .lib-entry-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
-/* ---------- config LLM (dentro do menu) ---------- */
+/* ---------- LLM config (inside the menu) ---------- */
 #cfg-panel label { display: block; margin: 8px 0; font-size: .85em; color: var(--muted); }
 #cfg-panel input {
   width: 100%; margin-top: 4px; padding: 8px 10px;
@@ -556,7 +556,7 @@ footer {
   .app-header { padding: 10px 12px 8px; }
 }
 
-/* ---------- movimento reduzido ---------- */
+/* ---------- reduced motion ---------- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: .01ms !important;

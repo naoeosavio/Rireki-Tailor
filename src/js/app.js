@@ -1,12 +1,12 @@
-// RirekiTailor Web — app principal.
-// Seções (workspaces por vaga) + stepper 3 etapas + LLM + engine SwiftLaTeX.
-// UI: temas dark/light, toasts, modais customizados, menu global (biblioteca de
-// masters/templates + config LLM), chat por seção (js/chat.js).
+// RirekiTailor Web — main app.
+// Sections (per-job workspaces) + 3-step stepper + LLM + SwiftLaTeX engine.
+// UI: dark/light themes, toasts, custom modals, global menu (master/template
+// library + LLM config), per-section chat (js/chat.js).
 
 (function () {
   'use strict';
 
-  // ---------- Estado ----------
+  // ---------- State ----------
   const LS_SECTIONS = 'riki.sections';
   const LS_ACTIVE = 'riki.active';
   const LS_CONFIG = 'riki.config';
@@ -23,8 +23,8 @@
     pitch: 'data/pitch.md',
   };
 
-  /* Campos de texto por etapa — a lista canônica usada por updateAllCounters,
-   * fillStep1 e clearStep1Fields. */
+  /* Text fields per step — the canonical list used by updateAllCounters,
+   * fillStep1 and clearStep1Fields. */
   const STEP1_FIELDS = ['role', 'master', 'template', 'pitch'];
   const STEP2_FIELDS = ['cvOut', 'cover', 'tex'];
   const TEXT_FIELDS = STEP1_FIELDS.concat(STEP2_FIELDS);
@@ -47,7 +47,7 @@
 
   function defaultSection() {
     return {
-      name: 'Vaga nova',
+      name: 'New job',
       role: '',
       master: '',
       lang: 'en',
@@ -64,22 +64,22 @@
     };
   }
 
-  function now() { return new Date().toLocaleString('pt-BR'); }
+  function now() { return new Date().toLocaleString('en-US'); }
   function touch(s) { s.updatedAt = Date.now(); }
   function active() { return sections[activeId] || null; }
 
-  // ---------- Tema ----------
+  // ---------- Theme ----------
   function applyTheme(t) {
     document.documentElement.dataset.theme = t;
     try {
       localStorage.setItem(LS_THEME, t);
-    } catch (_) { /* storage bloqueado: o tema segue só em memória */ }
+    } catch (_) { /* storage blocked: the theme stays in memory only */ }
   }
 
   function initTheme() {
-    /* localStorage pode lançar (SecurityError com storage bloqueado,
-     * iframe opaco): sem o try, o init() morria antes de ligar qualquer
-     * handler e a página ficava morta. */
+    /* localStorage can throw (SecurityError with storage blocked, opaque
+     * iframe): without the try, init() would die before wiring any handler
+     * and the page would be dead. */
     let saved = null;
     try {
       saved = localStorage.getItem(LS_THEME);
@@ -88,7 +88,7 @@
     applyTheme(t);
   }
 
-  // ---------- Persistência ----------
+  // ---------- Persistence ----------
   let quotaWarned = false;
 
   function saveAll() {
@@ -101,7 +101,7 @@
       const isQuota = e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014);
       if (isQuota && !quotaWarned) {
         quotaWarned = true;
-        toast('Armazenamento do navegador cheio — as últimas edições não foram salvas. Exporte um backup e apague seções antigas.', 'err', 9000);
+        toast('Browser storage full — the last edits were not saved. Export a backup and delete old sections.', 'err', 9000);
       } else if (!isQuota) {
         console.error('save failed', e);
       }
@@ -111,12 +111,12 @@
     const s = active();
     if (s && s.updatedAt) {
       const el = $('last-saved');
-      if (el) el.textContent = 'última edição: ' + new Date(s.updatedAt).toLocaleString('pt-BR');
+      if (el) el.textContent = 'last edit: ' + new Date(s.updatedAt).toLocaleString('en-US');
     }
   }
 
-  /* Digitação dispara saveAll a cada tecla — serializa TODAS as seções.
-   * Debounce de 400ms; flush no beforeunload garante a última edição. */
+  /* Typing fires saveAll on every keystroke — serializes ALL sections.
+   * 400ms debounce; the beforeunload flush guarantees the last edit. */
   let saveTimer = null;
   let libSaveTimer = null;
   function saveAllDebounced() {
@@ -124,9 +124,9 @@
     saveTimer = setTimeout(saveAll, 400);
   }
   function flushPendingSave() {
-    /* Dois timers pendentes (digitação + biblioteca): descarregar a aba sem
-     * limpar o da biblioteca perdia a edição — o saveAll() do unload nunca
-     * via o libDebouncedSave(). */
+    /* Two pending timers (typing + library): unloading the tab without
+     * clearing the library one lost the edit — the unload saveAll() never
+     * went through libDebouncedSave(). */
     let pending = false;
     if (saveTimer !== null) {
       clearTimeout(saveTimer);
@@ -141,24 +141,24 @@
     if (pending) saveAll();
   }
 
-  /* Preenche DEFAULT_URLS (llm.js carrega antes de app.js) para os campos
-   * de URL já aparecerem preenchidos; o que o usuário editar tem prioridade. */
+  /* Fills in DEFAULT_URLS (llm.js loads before app.js) so the URL fields
+   * start out populated; whatever the user edits takes priority. */
   function backfillDefaultUrls(cfg) {
     LLM_VENDORS.forEach((v) => {
       if (!cfg.urls[v] && DEFAULT_URLS[v]) cfg.urls[v] = DEFAULT_URLS[v];
     });
   }
 
-  /* Cada chave é lida isoladamente: uma chave corrompida não pode derrubar as
-   * outras, e o valor bruto vai para <chave>.backup em vez de ser sobrescrito
-   * por um reset — o saveAll() do fim do init() gravaria esse reset por cima
-   * dos dados do usuário. */
+  /* Each key is read in isolation: one corrupted key must not take down the
+   * others, and the raw value goes to <key>.backup instead of being
+   * overwritten by a reset — the saveAll() at the end of init() would write
+   * that reset on top of the user's data. */
   function loadJsonKey(key, fallback) {
     const read = readJsonSafe(localStorage, key);
     if (!read.found) return fallback;
     if (!read.ok) {
       stashCorruptValue(localStorage, key, read.raw);
-      console.warn('localStorage:', key, 'corrompido — valor bruto preservado em', key + '.backup');
+      console.warn('localStorage:', key, 'corrupted — raw value preserved at', key + '.backup');
       return fallback;
     }
     return read.value;
@@ -169,8 +169,8 @@
     backfillDefaultUrls(config);
     sections = normalizeSections(loadJsonKey(LS_SECTIONS, {}));
     library = normalizeLibrary(loadJsonKey(LS_LIBRARY, null));
-    /* Leitura direta (não passa pelo readJsonSafe): sem o try, storage
-     * bloqueado derrubava o init antes de ligar os handlers. */
+    /* Direct read (does not go through readJsonSafe): without the try,
+     * blocked storage took down init before wiring the handlers. */
     let a = null;
     try {
       a = localStorage.getItem(LS_ACTIVE);
@@ -226,9 +226,9 @@
   async function copyText(text, okMsg) {
     try {
       await navigator.clipboard.writeText(text);
-      toast(okMsg || 'Copiado para a área de transferência', 'ok');
+      toast(okMsg || 'Copied to clipboard', 'ok');
     } catch (e) {
-      toast('Não consegui copiar: ' + e.message, 'err');
+      toast('Could not copy: ' + e.message, 'err');
     }
   }
 
@@ -236,7 +236,7 @@
     const ta = $(key);
     const el = document.querySelector('[data-count-for="' + key + '"]');
     if (!ta || !el) return;
-    el.textContent = ta.value.length.toLocaleString('pt-BR') + ' caracteres';
+    el.textContent = ta.value.length.toLocaleString('en-US') + ' characters';
   }
 
   function updateAllCounters() {
@@ -258,7 +258,7 @@
     };
     const x = document.createElement('button');
     x.className = 'toast-close';
-    x.setAttribute('aria-label', 'Fechar aviso');
+    x.setAttribute('aria-label', 'Dismiss notification');
     x.innerHTML = '<svg class="ic"><use href="#i-close"/></svg>';
     x.addEventListener('click', dismiss);
     el.append(body, x);
@@ -266,7 +266,7 @@
     setTimeout(dismiss, ms || 4200);
   }
 
-  // ---------- Modais (substituem prompt/confirm/alert nativos) ----------
+  // ---------- Modals (replace native prompt/confirm/alert) ----------
   function buildModal(opts) {
     return new Promise((resolve) => {
       const root = $('modal-root');
@@ -315,7 +315,7 @@
       if (!opts.alertOnly) {
         cancelBtn = document.createElement('button');
         cancelBtn.type = 'button';
-        cancelBtn.textContent = opts.cancelText || 'Cancelar';
+        cancelBtn.textContent = opts.cancelText || 'Cancel';
         cancelBtn.addEventListener('click', () => finish(opts.input ? null : false));
         foot.appendChild(cancelBtn);
       }
@@ -357,12 +357,12 @@
   }
 
   const modal = {
-    confirm: (o) => buildModal(Object.assign({ okText: 'Confirmar' }, o)).then((v) => v === true),
+    confirm: (o) => buildModal(Object.assign({ okText: 'Confirm' }, o)).then((v) => v === true),
     prompt: (o) => buildModal(Object.assign({ input: true }, o)).then((v) => (typeof v === 'string' ? v : null)),
-    alert: (o) => buildModal(Object.assign({ alertOnly: true, okText: 'Entendi' }, o)),
+    alert: (o) => buildModal(Object.assign({ alertOnly: true, okText: 'Got it' }, o)),
   };
 
-  // ---------- Biblioteca global (masters/templates) ----------
+  // ---------- Global library (masters/templates) ----------
   function libArr(kind) { return kind === 'master' ? library.masters : library.templates; }
 
   function libDebouncedSave() {
@@ -379,13 +379,13 @@
       ]);
       library.masters.push({
         id: 'm' + Date.now().toString(36),
-        name: 'Master EN (padrão)',
+        name: 'Master EN (default)',
         lang: 'en',
         content: en,
       });
       library.templates.push({
         id: 't' + Date.now().toString(36),
-        name: 'CV_ATS (padrão)',
+        name: 'CV_ATS (default)',
         content: tpl,
       });
       saveAll();
@@ -419,15 +419,15 @@
     const name = document.createElement('input');
     name.className = 'lib-name';
     name.value = entry.name;
-    name.placeholder = kind === 'master' ? 'Nome do master' : 'Nome do template';
-    name.setAttribute('aria-label', 'Nome');
+    name.placeholder = kind === 'master' ? 'Master name' : 'Template name';
+    name.setAttribute('aria-label', 'Name');
     name.addEventListener('input', () => { entry.name = name.value; libDebouncedSave(); });
     head.appendChild(name);
 
     if (kind === 'master') {
       const lang = document.createElement('select');
       lang.className = 'lib-lang';
-      lang.setAttribute('aria-label', 'Idioma do master');
+      lang.setAttribute('aria-label', 'Master language');
       lang.innerHTML = '<option value="en">EN</option><option value="pt">PT</option>';
       lang.value = entry.lang || 'en';
       lang.addEventListener('change', () => { entry.lang = lang.value; libDebouncedSave(); });
@@ -445,26 +445,26 @@
       b.innerHTML = '<svg class="ic"><use href="#i-' + icon + '"/></svg>';
       return b;
     };
-    const useBtn = mkIcon('check', 'Usar nesta seção');
+    const useBtn = mkIcon('check', 'Use in this section');
     useBtn.addEventListener('click', () => applyLibToSection(kind, entry.id));
-    const upBtn = mkIcon('upload', 'Carregar arquivo');
+    const upBtn = mkIcon('upload', 'Upload file');
     upBtn.addEventListener('click', () => pickFile('.md,.tex,.txt').then(async (f) => {
       if (!f) return;
       if (isFileTooBig(f.size)) {
-        toast('Arquivo muito grande — limite de 8 MB por upload.', 'err', 6000);
+        toast('File too large — 8 MB limit per upload.', 'err', 6000);
         return;
       }
       entry.content = await readFile(f);
       libDebouncedSave();
       renderLibrary();
-      toast('Arquivo carregado em "' + (entry.name || 'sem nome') + '" — clique em Salvar se quiser garantir.', 'ok');
+      toast('File loaded into "' + (entry.name || 'unnamed') + '" — click Save to make sure it sticks.', 'ok');
     }));
-    const delBtn = mkIcon('trash', 'Excluir', 'icon-btn danger-ghost');
+    const delBtn = mkIcon('trash', 'Delete', 'icon-btn danger-ghost');
     delBtn.addEventListener('click', async () => {
       const ok = await modal.confirm({
-        title: 'Excluir da biblioteca?',
-        message: 'Remover <b>' + escapeHtml(entry.name || 'sem nome') + '</b>? As seções que já copiaram o conteúdo não são afetadas.',
-        confirmText: 'Excluir',
+        title: 'Delete from library?',
+        message: 'Remove <b>' + escapeHtml(entry.name || 'unnamed') + '</b>? Sections that already copied the content are not affected.',
+        confirmText: 'Delete',
         danger: true,
       });
       if (!ok) return;
@@ -473,7 +473,7 @@
       saveAll();
       renderLibrary();
       renderLibSelects();
-      toast('Item excluído da biblioteca', 'ok');
+      toast('Item deleted from library', 'ok');
     });
     acts.append(useBtn, upBtn, delBtn);
     head.appendChild(acts);
@@ -484,7 +484,7 @@
     ta.spellcheck = false;
     ta.addEventListener('input', () => {
       entry.content = ta.value;
-      chars.textContent = ta.value.length.toLocaleString('pt-BR') + ' caracteres';
+      chars.textContent = ta.value.length.toLocaleString('en-US') + ' characters';
       libDebouncedSave();
     });
 
@@ -493,16 +493,16 @@
     const saveBtn = document.createElement('button');
     saveBtn.type = 'button';
     saveBtn.className = 'sm primary';
-    saveBtn.textContent = 'Salvar';
+    saveBtn.textContent = 'Save';
     saveBtn.addEventListener('click', () => {
-      if (!entry.name.trim()) { toast('Dê um nome ao modelo antes de salvar.', 'warn'); return; }
+      if (!entry.name.trim()) { toast('Name the model before saving.', 'warn'); return; }
       saveAll();
       renderLibSelects();
-      toast('Modelo "' + entry.name + '" salvo na biblioteca', 'ok');
+      toast('Model "' + entry.name + '" saved to library', 'ok');
     });
     const chars = document.createElement('span');
     chars.className = 'meta';
-    chars.textContent = (entry.content || '').length.toLocaleString('pt-BR') + ' caracteres';
+    chars.textContent = (entry.content || '').length.toLocaleString('en-US') + ' characters';
     foot.append(saveBtn, chars);
 
     art.append(head, ta, foot);
@@ -566,23 +566,23 @@
     if (!s) return;
     const content = kind === 'master' ? s.master : s.template;
     if (!(content || '').trim()) {
-      toast('Nada para salvar — o campo está vazio.', 'warn');
+      toast('Nothing to save — the field is empty.', 'warn');
       return;
     }
     const arr = libArr(kind);
     if (arr.length >= LIB_MAX) {
-      toast('Limite de ' + LIB_MAX + ' atingido na biblioteca — exclua um item para salvar outro.', 'err');
+      toast('Library limit of ' + LIB_MAX + ' reached — delete an item to save another.', 'err');
       return;
     }
     const defName = kind === 'master'
       ? 'Master ' + (s.lang === 'pt' ? 'PT' : 'EN')
-      : 'Template da seção';
+      : 'Section template';
     const name = await modal.prompt({
-      title: 'Salvar como modelo',
-      message: 'Nome do modelo na biblioteca:',
+      title: 'Save as model',
+      message: 'Model name in the library:',
       initial: defName,
       placeholder: defName,
-      okText: 'Salvar',
+      okText: 'Save',
     });
     if (name === null) return;
     const entry = { id: 'x' + Date.now().toString(36), name: name.trim() || defName, content };
@@ -591,7 +591,7 @@
     saveAll();
     renderLibrary();
     renderLibSelects();
-    toast('"' + entry.name + '" salvo na biblioteca', 'ok');
+    toast('"' + entry.name + '" saved to library', 'ok');
   }
 
   function applyLibToSection(kind, id) {
@@ -609,7 +609,7 @@
     touch(s);
     saveAll();
     fillStep1();
-    toast('Copiado da biblioteca: "' + entry.name + '" (edição livre nesta seção)', 'ok');
+    toast('Copied from library: "' + entry.name + '" (freely editable in this section)', 'ok');
   }
 
   function renderLibSelects() {
@@ -621,7 +621,7 @@
       const ph = document.createElement('option');
       ph.value = '';
       const curId = kind === 'master' ? (s && s.masterId) : (s && s.templateId);
-      ph.textContent = curId && !arr.some((e) => e.id === curId) ? '— personalizado —' : '— biblioteca —';
+      ph.textContent = curId && !arr.some((e) => e.id === curId) ? '— customized —' : '— library —';
       sel.appendChild(ph);
       arr.forEach((e) => {
         const o = document.createElement('option');
@@ -631,13 +631,13 @@
       });
       const mg = document.createElement('option');
       mg.value = '__manage__';
-      mg.textContent = 'Gerenciar biblioteca…';
+      mg.textContent = 'Manage library…';
       sel.appendChild(mg);
       sel.value = curId && arr.some((e) => e.id === curId) ? curId : '';
     });
   }
 
-  // ---------- Sidebar (menu global) ----------
+  // ---------- Sidebar (global menu) ----------
   let lastFocus = null;
 
   function activateTab(tab) {
@@ -671,14 +671,14 @@
     if (lastFocus && lastFocus.focus) lastFocus.focus();
   }
 
-  // ---------- Seções ----------
+  // ---------- Sections ----------
   function renderSections() {
     const sel = $('section-select');
     sel.innerHTML = '';
     Object.keys(sections).sort((a, b) => sections[b].updatedAt - sections[a].updatedAt).forEach((id) => {
       const o = document.createElement('option');
       o.value = id;
-      o.textContent = sections[id].name + ' — ' + new Date(sections[id].updatedAt).toLocaleDateString('pt-BR');
+      o.textContent = sections[id].name + ' — ' + new Date(sections[id].updatedAt).toLocaleDateString('en-US');
       sel.appendChild(o);
     });
     sel.value = activeId || '';
@@ -696,13 +696,13 @@
     const src = active();
     const def = defaultSection();
     const name = await modal.prompt({
-      title: 'Nova seção',
-      message: 'Nome da seção (vaga):',
-      initial: 'Vaga — ' + new Date().toLocaleDateString('pt-BR'),
-      okText: 'Criar',
+      title: 'New section',
+      message: 'Section name (job):',
+      initial: 'Job — ' + new Date().toLocaleDateString('en-US'),
+      okText: 'Create',
     });
     if (name === null) return;
-    def.name = name.trim() || 'Vaga nova';
+    def.name = name.trim() || 'New job';
     if (src) {
       def.master = src.master;
       def.lang = src.lang;
@@ -726,16 +726,16 @@
     renderLibSelects();
     fillStep1();
     goTo(1);
-    toast('Seção "' + def.name + '" criada', 'ok');
+    toast('Section "' + def.name + '" created', 'ok');
   }
 
   async function renameSection() {
     const s = active();
     if (!s) return;
     const n = await modal.prompt({
-      title: 'Renomear seção',
+      title: 'Rename section',
       initial: s.name,
-      okText: 'Renomear',
+      okText: 'Rename',
     });
     if (n && n.trim()) {
       s.name = n.trim();
@@ -749,7 +749,7 @@
     const s = active();
     if (!s) return;
     const copy = Object.assign(defaultSection(), JSON.parse(JSON.stringify(s)));
-    copy.name = s.name + ' (cópia)';
+    copy.name = s.name + ' (copy)';
     copy.cvOut = '';
     copy.cover = '';
     copy.tex = '';
@@ -761,16 +761,16 @@
     renderSections();
     renderLibSelects();
     fillStep1();
-    toast('Seção duplicada — conteúdo gerado foi limpo', 'ok');
+    toast('Section duplicated — generated content was cleared', 'ok');
   }
 
   async function deleteSection() {
     const s = active();
     if (!s) return;
     const ok = await modal.confirm({
-      title: 'Excluir seção?',
-      message: 'Excluir <b>' + escapeHtml(s.name) + '</b>? Não tem volta.',
-      confirmText: 'Excluir',
+      title: 'Delete section?',
+      message: 'Delete <b>' + escapeHtml(s.name) + '</b>? This cannot be undone.',
+      confirmText: 'Delete',
       danger: true,
     });
     if (!ok) return;
@@ -781,21 +781,21 @@
     renderSections();
     renderLibSelects();
     fillStep1();
-    toast('Seção excluída', 'ok');
+    toast('Section deleted', 'ok');
   }
 
   function exportSections() {
-    /* config sanitizado: model/urls são úteis p/ restaurar; keys nunca saem daqui */
+    /* Sanitized config: model/urls are useful for restoring; keys never leave here */
     const safeConfig = { model: config.model, urls: Object.assign({}, config.urls) };
     const payload = { exportedAt: now(), config: safeConfig, library, sections };
     download('riki-secoes-' + Date.now() + '.json', JSON.stringify(payload, null, 2), 'application/json');
-    toast('Backup JSON baixado — sem as API keys (por segurança)', 'ok');
+    toast('JSON backup downloaded — without the API keys (for safety)', 'ok');
   }
 
   async function importSections(file) {
-    /* Sem teto, um arquivo de GBs ia inteiro para a RAM via FileReader. */
+    /* Without a ceiling, a multi-GB file would go entirely into RAM via FileReader. */
     if (isFileTooBig(file.size)) {
-      toast('Backup muito grande — limite de 8 MB por importação.', 'err', 6000);
+      toast('Backup too large — 8 MB limit per import.', 'err', 6000);
       return;
     }
     try {
@@ -805,8 +805,8 @@
       }
       let skippedSections = 0;
       Object.keys(data.sections).forEach((id) => {
-        /* Lote de import limitado: milhares de seções congelariam o render
-         * e persistiriam o congelamento. Quem já existe pode atualizar. */
+        /* Capped import batch: thousands of sections would freeze rendering
+         * and persist the freeze. Existing ones may still update. */
         if (!sections[id] && Object.keys(sections).length >= STORE_MAX_SECTIONS) { skippedSections++; return; }
         sections[id] = normalizeSection(data.sections[id]);
       });
@@ -816,7 +816,7 @@
           const merged = mergeLibraryList(library[listKey], data.library[listKey], kind, LIB_MAX);
           library[listKey] = merged.merged;
           if (merged.skipped) {
-            toast('Biblioteca: ' + merged.skipped + ' item(ns) ignorado(s) — limite de ' + LIB_MAX + ' ou id já existente.', 'warn', 6000);
+            toast('Library: ' + merged.skipped + ' item(s) skipped — limit of ' + LIB_MAX + ' or duplicate id.', 'warn', 6000);
           }
         });
       }
@@ -827,13 +827,13 @@
       renderLibSelects();
       fillStep1();
       fillConfig();
-      toast('Importado: ' + ids.length + ' seção(ões)' + (skippedSections ? ' — ' + skippedSections + ' ignorada(s) pelo limite de ' + STORE_MAX_SECTIONS : ''), skippedSections ? 'warn' : 'ok');
+      toast('Imported: ' + ids.length + ' section(s)' + (skippedSections ? ' — ' + skippedSections + ' skipped by the ' + STORE_MAX_SECTIONS + ' limit' : ''), skippedSections ? 'warn' : 'ok');
     } catch (e) {
-      toast('Importação falhou: ' + e.message, 'err');
+      toast('Import failed: ' + e.message, 'err');
     }
   }
 
-  // ---------- Etapa 1 ----------
+  // ---------- Step 1 ----------
   function bindFields() {
     document.querySelectorAll('[data-bind]').forEach((el) => {
       el.addEventListener('input', () => {
@@ -859,10 +859,10 @@
       btn.addEventListener('click', async () => {
         const f = await pickFile(btn.dataset.upload === 'json' ? '.json' : '.md,.tex,.txt');
         if (!f) return;
-        /* FileReader sem teto: um arquivo de GBs ia inteiro para a RAM e
-         * depois estourava a cota do localStorage no saveAll. */
+        /* FileReader without a ceiling: a multi-GB file would go entirely
+         * into RAM and then blow the localStorage quota on saveAll. */
         if (isFileTooBig(f.size)) {
-          toast('Arquivo muito grande — limite de 8 MB por upload.', 'err', 6000);
+          toast('File too large — 8 MB limit per upload.', 'err', 6000);
           return;
         }
         if (btn.dataset.upload === 'json') return importSections(f);
@@ -882,7 +882,7 @@
           updateCounter(key);
         }
         fillStep1();
-        toast('Arquivo "' + f.name + '" carregado', 'ok');
+        toast('File "' + f.name + '" loaded', 'ok');
       });
     });
 
@@ -901,7 +901,7 @@
         touch(s);
         saveAll();
         fillStep1();
-        toast('Restaurado padrão de data/', 'ok');
+        toast('Restored default from data/', 'ok');
       });
     });
 
@@ -915,8 +915,8 @@
     document.querySelectorAll('[data-copy]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const ta = $(btn.dataset.copy);
-        if (ta && ta.value.trim()) copyText(ta.value, 'Copiado');
-        else toast('Nada para copiar ainda.', 'warn');
+        if (ta && ta.value.trim()) copyText(ta.value, 'Copied');
+        else toast('Nothing to copy yet.', 'warn');
       });
     });
   }
@@ -951,8 +951,8 @@
   function fillStep1() {
     const s = active();
     if (!s) {
-      /* Sem seção ativa, o formulário e o PDF que sobraram da seção apagada
-       * ficariam na tela como se fossem dados da seção corrente. */
+      /* With no active section, the form and PDF left over from the deleted
+       * section would stay on screen as if they were the current section's data. */
       $('step1-empty').style.display = 'block';
       clearStep1Fields();
       hidePdf();
@@ -974,7 +974,7 @@
 
   async function fetchText(url) {
     const r = await fetch(url);
-    if (!r.ok) throw new Error('Falha ao carregar ' + url + ': HTTP ' + r.status);
+    if (!r.ok) throw new Error('Failed to load ' + url + ': HTTP ' + r.status);
     return await r.text();
   }
 
@@ -988,9 +988,9 @@
     try {
       await fn(s);
     } catch (e) {
-      setStatus('ERRO: ' + e.message, 'err');
-      log('ERRO:', e.message);
-      toast(e.code === 'NO_KEY' ? e.message + ' Abra o menu (LLM).' : e.message, 'err', 6000);
+      setStatus('ERROR: ' + e.message, 'err');
+      log('ERROR:', e.message);
+      toast(e.code === 'NO_KEY' ? e.message + ' Open the menu (LLM).' : e.message, 'err', 6000);
     } finally {
       setBusy(btnId, false);
       progress(false);
@@ -998,57 +998,57 @@
   }
 
   async function genCvOut(s) {
-    if (!s.role.trim()) { toast('Cole a descrição da vaga antes de gerar o CV.', 'warn'); return; }
-    if (!s.master.trim()) { toast('O CV master está vazio — carregue ou cole um CV.', 'warn'); return; }
-    setStatus('Gerando CV_OUT.md (' + config.model + ')…', 'busy');
+    if (!s.role.trim()) { toast('Paste the job description before generating the CV.', 'warn'); return; }
+    if (!s.master.trim()) { toast('The master CV is empty — upload or paste a CV.', 'warn'); return; }
+    setStatus('Generating CV_OUT.md (' + config.model + ')…', 'busy');
     s.cvOut = sanitizeFenced(await tellChat(buildAtsPrompt(s.master, s.lang, s.role), config));
     $('cvOut').value = s.cvOut;
     updateCounter('cvOut');
     touch(s); saveAll();
-    setStatus('CV_OUT.md gerado — revise na Etapa 2', 'ok');
-    toast('CV_OUT.md pronto na Etapa 2', 'ok');
+    setStatus('CV_OUT.md generated — review it in Step 2', 'ok');
+    toast('CV_OUT.md ready in Step 2', 'ok');
   }
 
   async function genCover(s) {
-    if (!(s.cvOut.trim() || s.master.trim())) { toast('Gere o CV_OUT.md ou tenha um CV master antes do cover.', 'warn'); return; }
-    setStatus('Gerando cover.md (' + config.model + ')…', 'busy');
+    if (!(s.cvOut.trim() || s.master.trim())) { toast('Generate CV_OUT.md or have a master CV before the cover letter.', 'warn'); return; }
+    setStatus('Generating cover.md (' + config.model + ')…', 'busy');
     s.cover = sanitizeFenced(await tellChat(buildCoverPrompt(s.cvOut || s.master, s.lang, s.role, s.pitch), config));
     $('cover').value = s.cover;
     updateCounter('cover');
     touch(s); saveAll();
-    setStatus('cover.md gerado', 'ok');
-    toast('cover.md pronto', 'ok');
+    setStatus('cover.md generated', 'ok');
+    toast('cover.md ready', 'ok');
   }
 
   async function toTex(s) {
-    if (!(s.cvOut.trim() || s.master.trim())) { toast('Sem conteúdo markdown para converter.', 'warn'); return; }
-    if (!s.template.trim()) { toast('O template LaTeX está vazio — carregue um da biblioteca.', 'warn'); return; }
-    setStatus('Convertendo markdown → LaTeX (' + config.model + ')…', 'busy');
+    if (!(s.cvOut.trim() || s.master.trim())) { toast('No markdown content to convert.', 'warn'); return; }
+    if (!s.template.trim()) { toast('The LaTeX template is empty — load one from the library.', 'warn'); return; }
+    setStatus('Converting markdown → LaTeX (' + config.model + ')…', 'busy');
     s.tex = sanitizeTex(await tellChat(buildTexPrompt(s.cvOut || s.master, s.template), config));
     $('tex').value = s.tex;
     updateCounter('tex');
     touch(s); saveAll();
-    setStatus('.tex gerado — revise e compile na Etapa 3', 'ok');
-    toast('.tex gerado na Etapa 3', 'ok');
+    setStatus('.tex generated — review and compile in Step 3', 'ok');
+    toast('.tex generated in Step 3', 'ok');
     goTo(3);
   }
 
-  // ---------- Etapa 3 / Engine ----------
+  // ---------- Step 3 / Engine ----------
   function getEngine() {
     if (engine) return Promise.resolve(engine);
     if (!enginePromise) {
       enginePromise = new Promise((resolve, reject) => {
-        setStatus('Carregando engine LaTeX (1ª vez ~1 min)…', 'busy');
+        setStatus('Loading LaTeX engine (first time ~1 min)…', 'busy');
         const e = new PdfTeXEngine();
         e.loadEngine().then(() => {
           engine = e;
           enginePromise = null;
-          setStatus('Engine pronto', 'ok');
+          setStatus('Engine ready', 'ok');
           resolve(e);
         }, (err) => {
-          /* Sem limpar a promise, a rejeição ficava cacheada e nenhum
-           * compile posterior retryava — a página só voltava a funcionar
-           * com reload. */
+          /* Without clearing the promise, the rejection stayed cached and no
+           * later compile retried — the page only came back to life on
+           * reload. */
           enginePromise = null;
           reject(err);
         });
@@ -1061,17 +1061,17 @@
     const s = active();
     if (!s) return;
     if (!s.tex.trim()) {
-      setStatus('Etapa 3: o .tex está vazio — gere ou cole um .tex.', 'warn');
-      toast('Compile o que? O CV.tex está vazio.', 'warn');
+      setStatus('Step 3: the .tex is empty — generate or paste a .tex.', 'warn');
+      toast('Compile what? CV.tex is empty.', 'warn');
       return;
     }
     setBusy('btn-compile', true);
-    setStatus('Compilando PDF (1ª vez ~20 min)…', 'busy');
+    setStatus('Compiling PDF (first time ~20 min)…', 'busy');
     log('--- compile start (' + now() + ') ---');
     progress(true);
     const t0 = performance.now();
     const timer = setInterval(() => {
-      setStatus('Compilando PDF… ' + ((performance.now() - t0) / 1000).toFixed(0) + 's', 'busy');
+      setStatus('Compiling PDF… ' + ((performance.now() - t0) / 1000).toFixed(0) + 's', 'busy');
     }, 30000);
     try {
       const eng = await getEngine();
@@ -1079,22 +1079,22 @@
       eng.writeMemFSFile('main.tex', s.tex);
       eng.setEngineMainFile('main.tex');
       const res = await eng.compileLaTeX();
-      try { eng.flushCache(); } catch (_) { /* engine pode não estar pronta */ }
+      try { eng.flushCache(); } catch (_) { /* engine may not be ready */ }
       log('status:', res.status, '(' + ((performance.now() - t0) / 1000).toFixed(0) + 's)');
       if (res.status === 0) {
         showPdf(res.pdf);
-        setStatus('PDF gerado (' + res.pdf.length + ' bytes)', 'ok');
-        toast('PDF compilado com sucesso', 'ok');
+        setStatus('PDF generated (' + res.pdf.length + ' bytes)', 'ok');
+        toast('PDF compiled successfully', 'ok');
       } else {
-        setStatus('ERRO no compile (status ' + res.status + ') — ver log', 'err');
+        setStatus('COMPILE ERROR (status ' + res.status + ') — see log', 'err');
         log(res.log || '');
-        toast('Falhou o compile — veja o log abaixo do viewer', 'err');
+        toast('Compile failed — see the log below the viewer', 'err');
       }
     } catch (e) {
       clearInterval(timer);
-      setStatus('ERRO no compile: ' + e.message, 'err');
-      log('ERRO:', e.message);
-      toast('ERRO no compile: ' + e.message, 'err');
+      setStatus('COMPILE ERROR: ' + e.message, 'err');
+      log('ERROR:', e.message);
+      toast('COMPILE ERROR: ' + e.message, 'err');
     } finally {
       clearInterval(timer);
       setBusy('btn-compile', false);
@@ -1124,7 +1124,7 @@
     if (n === 3 && window.Chat) Chat.render();
   }
 
-  // ---------- Config LLM ----------
+  // ---------- LLM config ----------
   function fillConfig() {
     $('cfg-model').value = config.model;
     LLM_VENDORS.forEach((v) => {
@@ -1136,9 +1136,9 @@
   }
 
   function bindConfig() {
-    /* Vendors sem linha no HTML (ou HTML futuro sem a linha) não podem
-     * derrubar o init: sem o guard, o TypeError abortava o resto dos
-     * listeners e o Chat.init — página morta. */
+    /* Vendors with no row in the HTML (or future HTML missing the row) must
+     * not take down init: without the guard, the TypeError aborted the rest
+     * of the listeners and Chat.init — dead page. */
     const modelEl = $('cfg-model');
     if (modelEl) modelEl.addEventListener('input', () => {
       config.model = modelEl.value.trim() || 'g';
@@ -1158,16 +1158,16 @@
     });
     $('btn-cfg-test').addEventListener('click', async () => {
       setBusy('btn-cfg-test', true);
-      setStatus('Testando conexão LLM…', 'busy');
+      setStatus('Testing LLM connection…', 'busy');
       try {
         const r = await llmTest(config);
-        setStatus('Conexão LLM: ' + r, 'ok');
+        setStatus('LLM connection: ' + r, 'ok');
         log('LLM test:', r);
         toast(r, 'ok', 6000);
       } catch (e) {
-        setStatus('Conexão LLM falhou: ' + e.message, 'err');
-        log('LLM test falhou:', e.message);
-        toast('Conexão LLM falhou: ' + e.message, 'err', 6000);
+        setStatus('LLM connection failed: ' + e.message, 'err');
+        log('LLM test failed:', e.message);
+        toast('LLM connection failed: ' + e.message, 'err', 6000);
       } finally {
         setBusy('btn-cfg-test', false);
       }
@@ -1233,9 +1233,9 @@
     $('btn-export').addEventListener('click', exportSections);
     $('section-select').addEventListener('change', (e) => switchSection(e.target.value));
 
-    $('btn-gen-cv').addEventListener('click', () => generate(genCvOut, 'btn-gen-cv', 'Gerando CV_OUT.md'));
-    $('btn-gen-cover').addEventListener('click', () => generate(genCover, 'btn-gen-cover', 'Gerando cover.md'));
-    $('btn-to-tex').addEventListener('click', () => generate(toTex, 'btn-to-tex', 'Convertendo para LaTeX'));
+    $('btn-gen-cv').addEventListener('click', () => generate(genCvOut, 'btn-gen-cv', 'Generating CV_OUT.md'));
+    $('btn-gen-cover').addEventListener('click', () => generate(genCover, 'btn-gen-cover', 'Generating cover.md'));
+    $('btn-to-tex').addEventListener('click', () => generate(toTex, 'btn-to-tex', 'Converting to LaTeX'));
     $('btn-compile').addEventListener('click', compilePdf);
 
     document.querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', () => goTo(+b.dataset.nav)));
@@ -1250,7 +1250,7 @@
         a.download = 'CV.pdf';
         a.click();
       } else {
-        toast('Compile o PDF primeiro.', 'warn');
+        toast('Compile the PDF first.', 'warn');
       }
     });
 
@@ -1266,14 +1266,14 @@
 
     goTo(1);
     if (!active()) $('step1-empty').style.display = 'block';
-    setStatus('Pronto', 'ok');
+    setStatus('Ready', 'ok');
     saveAll();
   }
 
   function addLibraryEntry(kind) {
     const arr = libArr(kind);
     if (arr.length >= LIB_MAX) {
-      toast('Limite de ' + LIB_MAX + ' itens na biblioteca.', 'warn');
+      toast('Library limit of ' + LIB_MAX + ' items.', 'warn');
       return;
     }
     const entry = { id: 'x' + Date.now().toString(36), name: '', content: '' };
@@ -1288,7 +1288,7 @@
 
   async function createInitial() {
     const s = defaultSection();
-    s.name = 'Padrão';
+    s.name = 'Default';
     try {
       [s.role, s.master, s.template, s.pitch] = await Promise.all([
         fetchText(DEFAULT_FILES.role),

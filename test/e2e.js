@@ -9,7 +9,7 @@ const { chromium } = require('playwright');
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto('http://localhost:8080/index.html', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(1200);
-  console.log('seções:', await page.$$eval('#section-select option', (o) => o.map((x) => x.textContent)));
+  console.log('sections:', await page.$$eval('#section-select option', (o) => o.map((x) => x.textContent)));
 
   await page.click('[data-nav="3"]');
   const tex = await page.evaluate(() => fetch('/test/CV_ATS.tex').then((r) => r.text()));
@@ -20,7 +20,7 @@ const { chromium } = require('playwright');
   const t0 = Date.now();
   for (let i = 0; i < 3000; i++) {
     const s = await page.textContent('#status');
-    if (s.startsWith('PDF gerado') || s.startsWith('ERRO')) break;
+    if (/^(PDF generated|ERROR|COMPILE ERROR)/.test(s)) break;
     await page.waitForTimeout(1000);
   }
   console.log('status:', await page.textContent('#status'));
@@ -39,6 +39,6 @@ const { chromium } = require('playwright');
   const s = await page.textContent('#status');
   console.log('errors:', errors.length ? errors : 'none');
   await browser.close();
-  if (!s.startsWith('PDF gerado')) process.exit(1);
+  if (!s.startsWith('PDF generated')) process.exit(1);
   if (!header.head.replace(/ /g, '').startsWith('25504446')) process.exit(1);
 })().catch((e) => { console.error('E2E-FAIL:', e); process.exit(1); });

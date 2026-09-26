@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Diagnóstico LaTeX (RirekiTailor)</title>
+<title>LaTeX diagnostics (RirekiTailor)</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 2em; background: #14161a; color: #dfe3e8; }
   h1 { font-size: 1.2em; }
@@ -14,10 +14,10 @@
 </style>
 </head>
 <body>
-<h1>Diagnóstico LaTeX</h1>
-<p>Status: <span id="status">carregando engine…</span></p>
-<button id="btn-compile">Compilar CV_ATS.tex</button>
-<button id="btn-format">Compilar formato (pdflatex.fmt)</button>
+<h1>LaTeX diagnostics</h1>
+<p>Status: <span id="status">loading engine…</span></p>
+<button id="btn-compile">Compile CV_ATS.tex</button>
+<button id="btn-format">Compile format (pdflatex.fmt)</button>
 <p id="meta"></p>
 <pre id="log">—</pre>
 <iframe id="viewer" style="display:none"></iframe>
@@ -56,7 +56,7 @@ function showPdf(uint8) {
   const url = URL.createObjectURL(blob);
   viewer.style.display = 'block';
   viewer.src = url;
-  metaEl.textContent = `PDF gerado: ${uint8.length} bytes`;
+  metaEl.textContent = `PDF generated: ${uint8.length} bytes`;
 }
 
 async function loadCvTex() {
@@ -65,7 +65,7 @@ async function loadCvTex() {
 }
 
 async function compileCv() {
-  setStatus('compilando…');
+  setStatus('compiling…');
   log('--- compile start ---');
   const tex = await loadCvTex();
   engine.writeMemFSFile('main.tex', tex);
@@ -73,16 +73,16 @@ async function compileCv() {
   const res = await engine.compileLaTeX();
   log('status:', res.status);
   if (res.status === 0) {
-    setStatus('OK: compilou', 'ok');
+    setStatus('OK: compiled', 'ok');
     showPdf(res.pdf);
   } else {
-    setStatus(`ERRO: status ${res.status}`, 'err');
+    setStatus(`ERROR: status ${res.status}`, 'err');
     log(res.log);
   }
 }
 
 async function compileFormat() {
-  setStatus('compilando formato (primeira vez ~5min)…');
+  setStatus('compiling format (first time ~5min)…');
   try {
     const fmtBytes = await new Promise((resolve, reject) => {
       engine.latexWorker.onmessage = (ev) => {
@@ -95,11 +95,11 @@ async function compileFormat() {
       engine.latexWorker.postMessage({ cmd: 'compileformat' });
     });
     log('compileFormat resolve:', fmtBytes === undefined ? 'UNDEFINED' : fmtBytes.constructor.name + ' len=' + fmtBytes.length);
-    setStatus('OK: formato compilado no wasm', 'ok');
+    setStatus('OK: format compiled in wasm', 'ok');
     const r = await fetch('/api/upload-fmt', { method: 'POST', body: fmtBytes });
     log('upload fmt:', r.status, await r.text());
   } catch (e) {
-    setStatus('ERRO formato', 'err');
+    setStatus('FORMAT ERROR', 'err');
     log(String(e));
   }
 }
@@ -111,7 +111,7 @@ window.addEventListener('error', (e) => log('window error:', e.message, e.filena
 window.addEventListener('unhandledrejection', (e) => log('unhandled rejection:', String(e.reason)));
 
 engine.loadEngine().then(() => {
-  setStatus('engine pronto', 'ok');
+  setStatus('engine ready', 'ok');
   log('engine loaded');
   const params = new URLSearchParams(location.search);
   if (params.get('autostart') === 'format') {
@@ -120,7 +120,7 @@ engine.loadEngine().then(() => {
     setTimeout(compileCv, 300);
   }
 }).catch((e) => {
-  setStatus('falha ao carregar engine', 'err');
+  setStatus('failed to load engine', 'err');
   log('loadEngine error:', e);
 });
 </script>

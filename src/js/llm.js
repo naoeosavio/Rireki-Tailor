@@ -51,7 +51,7 @@ function tellCfg(config) {
 }
 
 function llmMissingKeyError(cfg) {
-  const err = new Error('Config LLM incompleta: informe a API key do vendor do modelo (' + cfg.model + ').');
+  const err = new Error('Incomplete LLM config: provide the API key for the model\'s vendor (' + cfg.model + ').');
   err.code = 'NO_KEY';
   return err;
 }
@@ -65,7 +65,7 @@ function assertKey(config) {
 async function tellChat(userPrompt, config) {
   const sdk = window.TellSDK;
   if (!sdk || typeof sdk.tell !== 'function') {
-    throw new Error('TellSDK não carregado (@tell-ai/sdk).');
+    throw new Error('TellSDK not loaded (@tell-ai/sdk).');
   }
   const cfg = assertKey(config);
   return await sdk.tell(userPrompt, {
@@ -76,12 +76,12 @@ async function tellChat(userPrompt, config) {
   });
 }
 
-// Modo chat: system prompt contextual + histórico acumulado em `context`.
-// One-shot por mensagem (TellSDK.tell não faz streaming no bundle browser).
+// Chat mode: contextual system prompt + accumulated history in `context`.
+// One-shot per message (TellSDK.tell does not stream in the browser bundle).
 async function chatTell(message, config, opts) {
   const sdk = window.TellSDK;
   if (!sdk || typeof sdk.tell !== 'function') {
-    throw new Error('TellSDK não carregado (@tell-ai/sdk).');
+    throw new Error('TellSDK not loaded (@tell-ai/sdk).');
   }
   const cfg = assertKey(config);
   const options = {
@@ -89,7 +89,7 @@ async function chatTell(message, config, opts) {
     keys: cfg.keys,
     urls: cfg.urls,
     platform: 'web browser',
-    exec: false, // modo browser: sem <RUN>, responde em texto
+    exec: false, // browser mode: no <RUN>, replies in plain text
   };
   if (opts && opts.system) options.system = opts.system;
   if (opts && opts.context) options.context = opts.context;
@@ -98,5 +98,5 @@ async function chatTell(message, config, opts) {
 
 async function llmTest(config) {
   const out = await tellChat('Reply with exactly: OK', config);
-  return 'OK — modelo respondeu: "' + out.trim().slice(0, 60) + '"';
+  return 'OK — model replied: "' + out.trim().slice(0, 60) + '"';
 }

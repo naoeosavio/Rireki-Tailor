@@ -8,13 +8,13 @@ const { chromium } = require('playwright');
   const t0 = Date.now();
   for (let i = 0; i < 300; i++) {
     const s = await page.textContent('#status').catch(() => '?');
-    if (s.includes('engine pronto')) break;
+    if (s.includes('engine ready')) break;
     await page.waitForTimeout(1000);
   }
   await page.click('#btn-compile');
   for (let i = 0; i < 1500; i++) {
     const s = await page.textContent('#status').catch(() => '?');
-    if (s.includes('OK') || s.includes('ERRO')) break;
+    if (s.includes('OK') || s.includes('ERROR')) break;
     await page.waitForTimeout(1000);
   }
   console.log('status:', await page.textContent('#status'));

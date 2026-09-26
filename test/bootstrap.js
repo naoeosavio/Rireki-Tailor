@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
-/* Bootstrap: compila CV_ATS.tex via engine wasm num browser headless,
- * espelhando arquivos texlive locais. Uso:
+/* Bootstrap: compiles CV_ATS.tex via the wasm engine in a headless browser,
+ * mirroring the local texlive files. Usage:
  *   node bootstrap.js [--new-browser] [--timeout-min 20]
  */
 const { chromium } = require('playwright');
@@ -46,7 +46,7 @@ page.on('console', (msg) => {
     if (m) texliveReqs.add(`${m[2]}/${m[3]} ${res.status()}`);
   });
 
-  console.log('abrindo', BASE + '/test.html');
+  console.log('opening', BASE + '/test.html');
   await page.goto(BASE + '/test.html', { waitUntil: 'domcontentloaded', timeout: 60000 });
 
   const waitStatus = async (label, timeoutMs, expected) => {
@@ -56,7 +56,7 @@ page.on('console', (msg) => {
       const s = await page.textContent('#status').catch(() => '');
       if (expected) {
         if (s.includes(expected)) return s;
-      } else if (s.includes('OK') || s.includes('ERRO') || s.includes('TIMEOUT')) return s;
+      } else if (s.includes('OK') || s.includes('ERROR') || s.includes('TIMEOUT')) return s;
       const now = Date.now();
       if (now - lastNote > 15000) {
         lastNote = now;
@@ -67,8 +67,8 @@ page.on('console', (msg) => {
     return 'TIMEOUT';
   };
 
-  // espera engine pronto
-  const st0 = await waitStatus('engine', 120000, 'engine pronto');
+  // wait for the engine to be ready
+  const st0 = await waitStatus('engine', 120000, 'engine ready');
   note('engine: ' + st0);
 
   await page.click('#btn-format');
@@ -83,7 +83,7 @@ page.on('console', (msg) => {
   fs.writeFileSync(path.join(OUT, 'log.txt'), logText);
   fs.writeFileSync(path.join(OUT, 'console.txt'), consoleLog.join('\n'));
   fs.writeFileSync(path.join(OUT, 'texlive-requests.txt'), [...texliveReqs].sort().join('\n'));
-  console.log('logs salvos em', OUT);
+  console.log('logs saved to', OUT);
   console.log('total texlive requests:', texliveReqs.size);
 
   await browser.close();

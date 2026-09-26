@@ -1,167 +1,181 @@
-# RirekiTailor Web — Compilação LaTeX no browser
+# RirekiTailor Web — LaTeX compilation in the browser
 
-Compila o CV (`.tex`) em PDF **100% no browser**, via engine SwiftLaTeX (PDFTeX/Wasm) vendored,
-sem qualquer backend de TeX. Um servidor-espelho local (somente em desenvolvimento) resolve as
-requisições kpathsea do engine contra o TeXLive instalado e copia os arquivos para `src/pdftex/`
-— depois disso, o app é **estático e offline** (basta servir `src/` com qualquer HTTP server).
+Compiles the CV (`.tex`) to PDF **100% in the browser**, via the vendored SwiftLaTeX engine
+(PDFTeX/Wasm), with no TeX backend whatsoever. A local mirror server (development only)
+resolves the engine's kpathsea requests against the installed TeXLive and copies the files
+into `src/pdftex/` — after that, the app is **static and offline** (just serve `src/` with
+any HTTP server).
 
-## Arquitetura
+## Architecture
 
 ```
-CV_ATS.tex ──► PdfTeXEngine (wasm, no browser)
-                    │  kpse_find_file (XHR síncrono)
+CV_ATS.tex ──► PdfTeXEngine (wasm, in the browser)
+                    │  kpse_find_file (synchronous XHR)
                     ▼
-              /pdftex/{formatId}/{nome}
+              /pdftex/{formatId}/{name}
                     │
         ┌───────────┴─────────────┐
-        │  (produção)             │ (desenvolvimento)
+        │  (production)           │ (development)
         ▼                         ▼
-  src/pdftex/ (espelho)     serve.js (resolvedor TeXLive)
-  estático, offline         /var/lib/texmf, /usr/share/texmf,
-                            /usr/share/texlive/texmf-dist
+  src/pdftex/ (mirror)      serve.js (TeXLive resolver)
+  static, offline            /var/lib/texmf, /usr/share/texmf,
+                             /usr/share/texlive/texmf-dist
 ```
 
-O engine consulta o kpathsea emulado: para cada arquivo pedido (`format+"/"+nome`), espera a
-resposta com header `fileid: <basename>` (o arquivo vai para `/tex/<fileid>` no FS virtual) ou
-**301** (arquivo não existe — cacheado). Em produção os arquivos vêm direto do espelho
-`src/pdftex/{formatId}/{nome}`.
+The engine queries the emulated kpathsea: for each requested file (`format+"/"+name`), it
+expects a response carrying the `fileid: <basename>` header (the file lands at
+`/tex/<fileid>` in the virtual FS) or **301** (file does not exist — cached). In production
+the files come straight from the `src/pdftex/{formatId}/{name}` mirror.
 
-## Componentes
+## Components
 
-| Arquivo | Papel |
+| File | Role |
 |---|---|
-| `src/index.html` | **App principal** — seções por vaga + stepper 3 etapas + PDF viewer + **menu global (sidebar)** + **chat por seção**. |
-| `src/js/app.js` | Estado, seções (workspaces por vaga), auto-save (localStorage), **tema dark/light**, **modais/toasts**, **biblioteca de masters/templates**, LLM, engine. |
-| `src/js/chat.js` | **Chat por seção** ("Assistente da vaga"): histórico por seção, system prompt contextual (vaga/master/CV_OUT/cover/tex), markdown-lite seguro, quick-asks. |
-| `src/js/prompts.js` | Prompts ATS/cover/tex (idênticos ao CLI; ATS carrega `data/PROMPT_ATS.md`). |
-| `src/js/llm.js` | Camada LLM via **tell-ai sdk** (`TellSDK.tell`): model alias/spec + keys/urls por vendor, migração de config antigo, teste de conexão, `chatTell()` (modo chat com `system`/`context`, `exec:false`). |
-| `src/vendor/tell/` | **tell-ai sdk** (v0.2.1) vendored como ESM nativo sem bundler: `browser.js` (cópia de `dist/browser.js`, build ESM self-contained) + `sdk.js` (`export * as TellSDK from "@tell-ai/sdk"` via import map, expõe `window.TellSDK`). MIT. |
-| `src/css/app.css` | Temas **dark/light** (`data-theme`), design system (botões, cards, stepper, toasts, modais, sidebar, chat), responsivo, `prefers-reduced-motion`. |
-| `src/vendor/swiftlatex/` | Engine vendored. Patches: endpoint texlive → origin local; `ENGINE_PATH` via `document.currentScript`; `compileFormat` devolvendo os bytes (Uint8Array) do fmt. |
-| `src/scripts/serve.js` | Dev server + resolvedor kpathsea (ordem `TEX_SUBROOTS` e `TEXMF_DIRS` como o TeXLive), `fix_extension` (ids → extensões), header `fileid`, 301 para MISS, espelho em `src/pdftex/`, `POST /api/upload-fmt`. |
-| `test/test.html` | Harness de diagnóstico: carrega o engine, compila `test/CV_ATS.tex`, reconstrói o formato. `?autostart=format` / `?autostart=compile`. |
-| `test/smoke.js` / `e2e.js` | Playwright: UI (temas, sidebar/biblioteca, modais, chat, persistência, export) e compile completo do PDF. |
-| `test/bootstrap.js` | Playwright: fluxo completo headless (build do fmt + compile) — usado para popular o espelho. |
-| `test/probe.js` / `verify.js` | Diagnóstico: compile headless com logs do servidor / verificação do PDF gerado. |
-| `src/pdftex/` | **Espelho estático** (bootstrap concluído): 82 arquivos, 34 MB — inclui `10/swiftlatexpdftex.fmt` (22 MB, built via wasm, magic `XT2W`). |
+| `src/index.html` | **Main app** — per-job sections + 3-step stepper + PDF viewer + **global menu (sidebar)** + **per-section chat**. |
+| `src/js/app.js` | State, sections (per-job workspaces), auto-save (localStorage), **dark/light theme**, **modals/toasts**, **master/template library**, LLM, engine. |
+| `src/js/chat.js` | **Per-section chat** ("Job assistant"): per-section history, contextual system prompt (job/master/CV_OUT/cover/tex), safe markdown-lite, quick-asks. |
+| `src/js/store.js` | Pure state normalizers — the shape barrier between localStorage/imported JSON and the app (anti-DoS ceilings, id allowlist, corrupt-value stashing). |
+| `src/js/prompts.js` | ATS/cover/tex prompts (identical to the CLI; ATS loads `data/PROMPT_ATS.md`). |
+| `src/js/llm.js` | LLM layer via the **tell-ai sdk** (`TellSDK.tell`): model alias/spec + keys/urls per vendor, legacy config migration, connection test, `chatTell()` (chat mode with `system`/`context`, `exec:false`). |
+| `src/vendor/tell/` | **tell-ai sdk** (v0.2.1) vendored as native ESM with no bundler: `browser.js` (copy of `dist/browser.js`, self-contained ESM build) + `sdk.js` (`export * as TellSDK from "@tell-ai/sdk"` via import map, exposes `window.TellSDK`). MIT. |
+| `src/css/app.css` | **Dark/light** themes (`data-theme`), design system (buttons, cards, stepper, toasts, modals, sidebar, chat), responsive, `prefers-reduced-motion`. |
+| `src/vendor/swiftlatex/` | Vendored engine. Patches: texlive endpoint → local origin; `ENGINE_PATH` via `document.currentScript`; `compileFormat` returning the fmt bytes (Uint8Array). |
+| `src/scripts/serve.js` | Dev server + kpathsea resolver (`TEX_SUBROOTS` and `TEXMF_DIRS` follow TeXLive's order), `fix_extension` (ids → extensions), `fileid` header, 301 for MISS, mirror into `src/pdftex/`, `POST /api/upload-fmt`. |
+| `test/test.html` | Diagnostic harness: loads the engine, compiles `test/CV_ATS.tex`, rebuilds the format. `?autostart=format` / `?autostart=compile`. |
+| `test/store_test.js` | Unit tests for the `store.js` normalizers. |
+| `test/serve_audit.js` / `serve_audit2.js` | Dev-server audit: path traversal, origin/CSRF guard, fmt upload limits, idle timeout. |
+| `test/app_audit.js` | Browser audit: corrupt-storage recovery, failed-engine retry, delete-last-section, chat persistence, quota, modals, uploads. |
+| `test/smoke.js` / `e2e.js` | Playwright: UI (themes, sidebar/library, modals, chat, persistence, export) and full PDF compile. |
+| `test/bootstrap.js` | Playwright: full headless flow (fmt build + compile) — used to populate the mirror. |
+| `test/probe.js` / `verify.js` | Diagnostics: headless compile with server logs / verification of the generated PDF. |
+| `src/pdftex/` | **Static mirror** (bootstrap complete): 82 files, 34 MB — includes `10/swiftlatexpdftex.fmt` (22 MB, built via wasm, magic `XT2W`). |
 
-## Fluxo do app (3 etapas)
+## App flow (3 steps)
 
-1. **Entradas** — descrição da vaga, CV master (toggle EN/PT), template LaTeX e pitch opcional,
-   com upload de arquivo, botões "↺ padrão" (restaura `data/`), **dropdowns da biblioteca**
-   (copiam master/template globais para a seção) e botões **"salvar como modelo"** (bookmark).
-   **Gerar CV_OUT.md** e **cover.md** via LLM (one-shot, com spinner + barra de progresso).
-2. **Markdown** — editar/copiar/baixar CV_OUT.md e cover.md. **Converter para LaTeX** → CV.tex
-   (mesmo prompt do `gen-pdf`: extrai o skeleton do template e preenche com o CV).
-3. **LaTeX → PDF** — editar o CV.tex (ou upload de um .tex pronto, pulando o LLM),
-   **Compilar PDF** no engine wasm → viewer + download. Ao lado do PDF, o **chat "Assistente
-   da vaga"** responde dúvidas/sugere melhorias com base no contexto da seção.
+1. **Inputs** — job description, master CV (EN/PT toggle), LaTeX template and optional pitch,
+   with file upload, "↺ default" buttons (restore from `data/`), **library dropdowns**
+   (copy a global master/template into the section) and **"save as model"** buttons
+   (bookmark).
+   **Generate CV_OUT.md** and **cover.md** via the LLM (one-shot, with spinner + progress bar).
+2. **Markdown** — edit/copy/download CV_OUT.md and cover.md. **Convert to LaTeX** → CV.tex
+   (same prompt as `gen-pdf`: extracts the template's skeleton and fills it with the CV).
+3. **LaTeX → PDF** — edit CV.tex (or upload a ready-made .tex, skipping the LLM),
+   **Compile PDF** with the wasm engine → viewer + download. Next to the PDF, the
+   **"Job assistant" chat** answers questions and suggests improvements based on the
+   section's context.
 
-### Menu global (sidebar) e biblioteca
+### Global menu (sidebar) and library
 
-- Botões de abertura: **hamburger** (aba Biblioteca) e **LLM** no header (aba LLM); fecha com X,
-  backdrop ou `Esc`.
-- **Biblioteca**: até **2 CV masters** (com idioma EN/PT) e **2 templates .tex**, com nome,
-  edição inline, upload e exclusão (modal de confirmação). Seed automático na 1ª execução
-  ("Master EN (padrão)" + "CV_ATS (padrão)" a partir de `data/`).
-- **Cópia por seção**: selecionar um item no dropdown do card (Etapa 1) **copia** o conteúdo
-  para a seção, que continua editável/independente (`s.masterId`/`s.templateId` viram
-  "personalizado" se o usuário editar em cima). Nova seção herda a escolha da atual.
-- **Salvar como modelo**: captura o master/template da seção ativa para a biblioteca
-  (botão bookmark no card ou ação equivalente na sidebar); limite de 2 com toast.
-- **Config LLM** vive na aba LLM da sidebar (mesmos IDs `#cfg-*`); keys/urls no localStorage.
-- Persistência: `localStorage["riki.library"]` = `{masters:[{id,name,lang,content}], templates:[…]}`;
-  incluída no export/import JSON (`riki-secoes-*.json`).
+- Open buttons: **hamburger** (Library tab) and **LLM** in the header (LLM tab); closes with
+  X, the backdrop, or `Esc`.
+- **Library**: up to **2 master CVs** (each with an EN/PT language) and **2 .tex templates**,
+  with name, inline editing, upload and deletion (confirmation modal). Auto-seeded on first
+  run ("Master EN (default)" + "CV_ATS (default)" from `data/`).
+- **Per-section copy**: picking an item from a card's dropdown (Step 1) **copies** its content
+  into the section, which stays editable/independent (`s.masterId`/`s.templateId` flip to
+  "customized" if the user edits on top). A new section inherits the current one.
+- **Save as model**: captures the active section's master/template into the library (the
+  bookmark button on the card, or the equivalent action in the sidebar); limit of 2 with a
+  toast.
+- **LLM config** lives in the sidebar's LLM tab (same `#cfg-*` IDs); keys/urls in localStorage.
+- Persistence: `localStorage["riki.library"]` = `{masters:[{id,name,lang,content}], templates:[…]}`;
+  included in the JSON export/import (`riki-secoes-*.json`).
 
-### Chat por seção ("Assistente da vaga")
+### Per-section chat ("Job assistant")
 
-- Painel na Etapa 3 (coluna ao lado do PDF; em telas < 1280px vai para largura total abaixo).
-- Histórico **por seção** (`section.chat`), auto-salvo; limpo ao duplicar; "limpar" com modal.
-- Cada mensagem usa `chatTell()` = `TellSDK.tell(msg, {exec:false, system, context})`:
-  - `system`: instruções do assistente + snapshot dos campos não vazios da seção
-    (vaga, master, CV_OUT, cover, CV.tex), no idioma da seção (pt/en);
-  - `context`: últimos ~14 turnos serializados (cap ~24k chars).
-  - One-shot por mensagem (sem streaming no bundle browser) — UI mostra bolha "pensando…".
-- Respostas renderizadas com **markdown-lite** (HTML escapado antes — sem XSS; suporta
-  code blocks, inline code, negrito, itálico, listas, links http/https, headings).
-- **Quick-asks** no estado vazio (filtrados pelos campos disponíveis); Enter envia,
-  Shift+Enter quebra linha; copiar mensagem; chips de contexto mostram o que o assistente "vê".
-- Sem API key: bolha de erro com botão que abre a sidebar na aba LLM.
+- Panel in Step 3 (column beside the PDF; below full width on screens < 1280px).
+- History is **per section** (`section.chat`), auto-saved; cleared on duplicate; "clear"
+  behind a modal.
+- Each message goes through `chatTell()` = `TellSDK.tell(msg, {exec:false, system, context})`:
+  - `system`: assistant instructions + a snapshot of the section's non-empty fields
+    (job, master, CV_OUT, cover, CV.tex), in the section's language (pt/en);
+  - `context`: the last ~14 turns serialized (capped at ~24k chars).
+  - One-shot per message (no streaming in the browser bundle) — the UI shows a "thinking…"
+    bubble.
+- Replies are rendered with **markdown-lite** (HTML escaped first — no XSS; supports
+  code blocks, inline code, bold, italic, lists, http/https links, headings).
+- **Quick-asks** in the empty state (filtered by the available fields); Enter sends,
+  Shift+Enter adds a newline; copy message; context chips show what the assistant "sees".
+- No API key: an error bubble with a button that opens the sidebar on the LLM tab.
 
-### UI (tema, toasts, modais)
+### UI (theme, toasts, modals)
 
-- **Temas dark/light** via `data-theme` no `<html>`; toggle no header; persistido em
-  `localStorage["riki.theme"]`; fallback `prefers-color-scheme`.
-- **Toasts** (`#toasts`) substituem feedbacks efêmeros; **modais customizados**
-  (`modal.confirm/prompt/alert`) substituem `prompt/confirm/alert` nativos (criar/renomear/
-  excluir seção, salvar modelo, limpar chat, exclusões na biblioteca).
-- Barra de progresso indeterminada + spinner nos botões durante geração LLM/compile;
-  contadores de caracteres; botões de copiar; stepper com estados done/active.
+- **Dark/light themes** via `data-theme` on `<html>`; toggle in the header; persisted in
+  `localStorage["riki.theme"]`; falls back to `prefers-color-scheme`.
+- **Toasts** (`#toasts`) replace ephemeral feedback; **custom modals**
+  (`modal.confirm/prompt/alert`) replace native `prompt/confirm/alert` (create/rename/
+  delete section, save model, clear chat, library deletions).
+- Indeterminate progress bar + button spinner during LLM generation/compile;
+  character counters; copy buttons; stepper with done/active states.
 
 ### LLM (tell-ai sdk)
 
-- Geração via `TellSDK.tell` (o mesmo `tell --no-exec` do CLI como função): system prompt
-  no-exec, modelo por alias ou spec completo (`j`, `d`, `g`, `openai:gpt-5.6-sol:high`…),
-  tags ` thinking`/`<RUN>` removidas, one-shot (sem streaming).
-- **Config global** no painel "LLM": campo Model (default `j` = google:gemini-3.5-flash-lite)
-  + grade de 13 vendors (openai, anthropic, google, deepseek, xai, cerebras, fireworks,
-  moonshotai, openrouter, alibaba, zai, vast, local) com key e base URL. As URLs já vêm **pré-preenchidas**
-  com os endpoints oficiais (via direta); se o browser bloquear, troque o campo
-  pela URL do seu proxy CORS (segunda via). Detalhes em `docs/llm-base-url.md`.
-  Tudo no localStorage.
-- Migração automática do config antigo (`apiKey`→`keys.openai`, `baseURL`→`urls.openai`).
-- O bundle IIFE do SDK é self-contained (define `process` próprio, sem `require()` de
-  node builtins) — carrega direto no browser, sem shims.
+- Generation via `TellSDK.tell` (the CLI's `tell --no-exec` as a function): no-exec system
+  prompt, model by alias or full spec (`j`, `d`, `g`, `openai:gpt-5.6-sol:high`…),
+  `thinking`/`<RUN>` tags stripped, one-shot (no streaming).
+- **Global config** in the "LLM" panel: Model field (default `j` = google:gemini-3.5-flash-lite)
+  + a grid of 13 vendors (openai, anthropic, google, deepseek, xai, cerebras, fireworks,
+  moonshotai, openrouter, alibaba, zai, vast, local) with key and base URL. The URLs come
+  **pre-filled** with the official endpoints (direct route); if the browser blocks it, swap
+  the field for your own CORS proxy URL (second route). Details in `docs/llm-base-url.md`.
+  Everything lives in localStorage.
+- Automatic migration of the legacy config (`apiKey`→`keys.openai`, `baseURL`→`urls.openai`).
+- The SDK's IIFE bundle is self-contained (defines its own `process`, no `require()` of node
+  builtins) — it loads straight into the browser, no shims.
 
-### Seções (workspaces por vaga)
+### Sections (per-job workspaces)
 
-- Cada seção guarda snapshot próprio: vaga, master, template, pitch, cvOut, cover, tex,
-  **chat** e as referências da biblioteca (`masterId`/`templateId`).
-- **+ Nova seção** (via modal) herda master + template + escolha da biblioteca da seção atual;
-  **Duplicar** limpa conteúdo gerado (cvOut/cover/tex/chat); tudo auto-salvo em localStorage.
-- Exportar/importar seções como JSON (`riki-secoes-*.json`) — inclui biblioteca e config.
-- Config LLM (baseURL/model/key) é **global** e fica no localStorage do browser —
-  compatível com qualquer endpoint OpenAI-compatible com CORS (OpenAI, OpenRouter, Groq, DeepSeek…).
+- Each section keeps its own snapshot: job, master, template, pitch, cvOut, cover, tex,
+  **chat**, and the library references (`masterId`/`templateId`).
+- **+ New section** (via modal) inherits master + template + the library choice of the current
+  section; **Duplicate** clears generated content (cvOut/cover/tex/chat); everything
+  auto-saved to localStorage.
+- Export/import sections as JSON (`riki-secoes-*.json`) — includes library and config.
+- LLM config (baseURL/model/key) is **global** and lives in the browser's localStorage —
+  compatible with any CORS-enabled OpenAI-compatible endpoint (OpenAI, OpenRouter, Groq,
+  DeepSeek…).
 
-### IDs de formato kpathsea relevantes
+### Relevant kpathsea format IDs
 `3` tfm · `4` afm · `10` fmt · `11` fontmap (.map) · `26` tex · `32` type1 (.pfa) ·
 `33` vf · `44` enc · `45` cmap · `47` opentype · `49` lig · `36` truetype · `41` miscfonts.
 
-## Uso
+## Usage
 
 ```bash
-# desenvolvimento (resolve qualquer arquivo do TeXLive + espelha):
-node src/scripts/serve.js --port 8080          # → http://localhost:8080/  (app) /test.html (diagnóstico)
+# development (resolves any TeXLive file + mirrors it):
+node src/scripts/serve.js --port 8080          # → http://localhost:8080/  (app) /test.html (diagnostics)
 
-# validação headless (Playwright, channel chromium):
-NODE_PATH=$(npm root -g) node test/smoke.js    # UI: seções, persistência, export
-NODE_PATH=$(npm root -g) node test/e2e.js      # compile completo → assert %PDF-1.5
+# headless validation (Playwright, channel chromium):
+NODE_PATH=$(npm root -g) node test/smoke.js    # UI: sections, persistence, export
+NODE_PATH=$(npm root -g) node test/e2e.js      # full compile → assert %PDF-1.5
 ```
 
-- **Compile é rápido (~2 s):** o espelho `src/pdftex/` + índices em memória eliminam os
-  walks de TeXMF; a 1ª compilação em servidor frio é que demora (walks ~20 min).
-  Em hosting estático (só o espelho), é instantâneo.
+- **Compilation is fast (~2 s):** the `src/pdftex/` mirror plus in-memory indexes eliminate
+  the TeXMF tree walks; only the first compilation on a cold server is slow (walks ~20 min).
+  On static hosting (mirror only), it is instant.
 
-- O formato (`pdflatex.fmt`) já está em `src/pdftex/10/swiftlatexpdftex.fmt`; se apagado,
-  `test.html?autostart=format` o reconstrói no wasm (~5 min) e faz upload via `POST /api/upload-fmt`.
-- Primeiro compile ~20–25 min (build do formato + downloads 1x1 via XHR síncrono);
-  compiles seguintes na mesma sessão usam o cache do worker (`/tex/`, `texlive200_cache`) e são rápidos.
-- **Playwright:** usar `chromium.launch({ channel: 'chromium' })` — o `chrome-headless-shell`
-  crasha (SIGSEGV) com esse wasm (2022, emscripten antigo).
+- The format (`pdflatex.fmt`) is already at `src/pdftex/10/swiftlatexpdftex.fmt`; if deleted,
+  `test.html?autostart=format` rebuilds it in wasm (~5 min) and uploads it via
+  `POST /api/upload-fmt`.
+- First compile ~20–25 min (format build + 1x1 downloads over synchronous XHR);
+  later compiles in the same session reuse the worker cache (`/tex/`, `texlive200_cache`)
+  and are fast.
+- **Playwright:** use `chromium.launch({ channel: 'chromium' })` — `chrome-headless-shell`
+  crashes (SIGSEGV) with this wasm (2022, old emscripten).
 
-## Notas do TeXLive (Debian)
+## TeXLive notes (Debian)
 
-- `pdftex.map` em `/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map` é **symlink** para
-  `pdftex_dl14.map` — o resolvedor segue symlinks.
-- tex-gyre não tem `.vf` no Debian: o mapa reencoda na carga (`<q-ec.enc <qhvri.pfb`).
-- `uenc.dfu`, `puenc.dfu`, `hyperref.cfg`, `tgheros.sty` não existem em texmf-dist; não são
-  fatais (tgheros.sty resolvido via `/usr/share/texmf`).
+- `pdftex.map` at `/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map` is a **symlink** to
+  `pdftex_dl14.map` — the resolver follows symlinks.
+- tex-gyre has no `.vf` on Debian: the map re-encodes on load (`<q-ec.enc <qhvri.pfb`).
+- `uenc.dfu`, `puenc.dfu`, `hyperref.cfg`, `tgheros.sty` do not exist in texmf-dist; they are
+  not fatal (tgheros.sty resolves via `/usr/share/texmf`).
 
-## Próximos passos
+## Next steps
 
-1. Testar a geração LLM real (ATS + cover + tex) com uma chave própria no painel "LLM".
-2. Remover `test/probe.js` quando o harness deixar de ser necessário.
-3. Publicar em hosting estático (todo o `src/` já é self-contained).
+1. Test real LLM generation (ATS + cover + tex) with your own key in the "LLM" panel.
+2. Remove `test/probe.js` once the harness is no longer needed.
+3. Publish to static hosting (all of `src/` is already self-contained).
 
 ## License
 
@@ -170,5 +184,5 @@ Copyright (C) 2026 RirekiTailor — `SPDX-License-Identifier: AGPL-3.0-only`.
 This project is licensed under the **GNU Affero General Public License v3.0 only**.
 See the full text at [`LICENSE`](./LICENSE).
 
-Dependencies vendored (`src/vendor/tell/`, `src/vendor/swiftlatex/`) retain 
+Vendored dependencies (`src/vendor/tell/`, `src/vendor/swiftlatex/`) retain
 their own licenses (MIT/upstream); the combined work is distributed as AGPL-3.0.

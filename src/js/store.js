@@ -1,27 +1,27 @@
-// Normalizadores de estado — a barreira de shape entre o que vem do
-// localStorage (ou de um JSON importado) e o app.
+// State normalizers — the shape barrier between what comes out of
+// localStorage (or an imported JSON) and the app.
 //
-// Sem esta camada, um valor corrompido no storage quebra a renderização
-// (TypeError em renderLibSelects/renderContextChips) e, no caso de JSON
-// inválido, derrubava o init() inteiro — a página ficava sem nenhum event
-// handler. Pior: o saveAll() do fim do init gravava o reset por cima dos
-// dados do usuário.
+// Without this layer, a corrupted value in storage breaks rendering
+// (TypeError in renderLibSelects/renderContextChips) and, in the case of
+// invalid JSON, used to take down the whole init() — the page ended up with
+// no event handler at all. Worse: the saveAll() at the end of init wrote the
+// reset on top of the user's data.
 //
-// Funções puras, sem DOM. Carregado como script global (o mesmo padrão de
-// prompts.js/llm.js) e exportado para Node em test/store_test.js.
+// Pure functions, no DOM. Loaded as a global script (the same pattern as
+// prompts.js/llm.js) and exported to Node in test/store_test.js.
 
 const STORE_SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const STORE_LANGS = ['en', 'pt'];
-const STORE_FALLBACK_NAME = 'Vaga nova';
+const STORE_FALLBACK_NAME = 'New job';
 
-/* Tetos anti-DoS: um backup hostil com 500 seções ou 10 mil mensagens
- * congelaria a render (um <option>/div por item) e estouraria a cota no
- * próximo saveAll — e o estado persistido travaria TODO load seguinte.
- * 200 seções / 200 msgs recentes é folga ampla para uso real. */
+/* Anti-DoS ceilings: a hostile backup with 500 sections or 10k messages
+ * would freeze rendering (one <option>/div per item) and blow the quota on
+ * the next saveAll — and the persisted state would jam EVERY later load.
+ * 200 sections / 200 recent messages is plenty of headroom for real use. */
 const STORE_MAX_CHAT = 200;
 const STORE_MAX_SECTIONS = 200;
-/* Uploads de arquivo (master/template/tex via FileReader): sem teto, um
- * arquivo de GBs vai inteiro para a RAM e depois para o localStorage. */
+/* File uploads (master/template/tex via FileReader): without a ceiling, a
+ * multi-GB file goes entirely into RAM and then into localStorage. */
 const STORE_MAX_FILE_BYTES = 8 * 1024 * 1024;
 
 function isFileTooBig(size) {
@@ -32,8 +32,8 @@ function isStoreObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-/* Só strings são texto de verdade: número/objeto num campo de texto é
- * corrupção, não valor. */
+/* Only strings are real text: a number/object in a text field is
+ * corruption, not a value. */
 function storeText(value) {
   return typeof value === 'string' ? value : '';
 }
@@ -42,8 +42,8 @@ function storeTime(value) {
   return typeof value === 'number' && isFinite(value) && value > 0 ? value : Date.now();
 }
 
-/* Os ids de seção/biblioteca entram em querySelector e em <option value>;
- * só o alfabeto seguro passa. */
+/* Section/library ids end up in querySelector and in <option value>;
+ * only the safe alphabet passes. */
 function isStoreSafeId(value) {
   return typeof value === 'string' && STORE_SAFE_ID.test(value);
 }
@@ -64,9 +64,9 @@ function storePickId(candidate, taken) {
   return id;
 }
 
-/* Lê uma chave JSON do storage sem lançar. Distingue "não existe" de
- * "existe mas não parseia" — o segundo caso é o que não pode ser
- * sobrescrito com um reset. */
+/* Read a JSON key from storage without throwing. Distinguishes "does not
+ * exist" from "exists but does not parse" — the second case is the one that
+ * must not be overwritten with a reset. */
 function readJsonSafe(storage, key) {
   let raw = null;
   try {
@@ -82,8 +82,8 @@ function readJsonSafe(storage, key) {
   }
 }
 
-/* Guarda o valor bruto sob <chave>.backup uma única vez: sobrescrever a
- * chave com um reset destrói a evidência e impede o usuário de recuperar. */
+/* Stash the raw value under <key>.backup exactly once: overwriting the key
+ * with a reset destroys the evidence and prevents the user from recovering. */
 function stashCorruptValue(storage, key, raw) {
   const backupKey = key + '.backup';
   try {
@@ -97,8 +97,8 @@ function stashCorruptValue(storage, key, raw) {
 function normalizeChat(raw) {
   if (!Array.isArray(raw)) return [];
   const items = raw.filter(isStoreObject);
-  /* Histórico hostil (milhares de msgs) vira milhares de divs no render e
-   * trava a aba em todo load: mantém só as mais recentes. */
+  /* Hostile history (thousands of messages) becomes thousands of divs on
+   * render and locks the tab on every load: keep only the most recent. */
   const tail = items.length > STORE_MAX_CHAT ? items.slice(items.length - STORE_MAX_CHAT) : items;
   return tail.map((m) => ({
     role: m.role === 'user' ? 'user' : 'assistant',
@@ -127,10 +127,11 @@ function normalizeSection(raw) {
   };
 }
 
-/* Mapa de seções em null-prototype: um id "__proto__" vindo de um JSON
- * adulterado vira uma propriedade comum em vez de pollutar o prototype.
- * `max` (só usado no import) limita o tamanho do lote: sem ele, um backup
- * com milhares de seções congela o render e persiste o congelamento. */
+/* Map of sections on a null prototype: a "__proto__" id coming from a
+ * tampered JSON becomes an ordinary property instead of polluting the
+ * prototype. `max` (used only on import) caps the batch size: without it, a
+ * backup with thousands of sections freezes rendering and persists the
+ * freeze. */
 function normalizeSections(raw, max) {
   const out = Object.create(null);
   if (!isStoreObject(raw)) return out;
@@ -167,8 +168,8 @@ function normalizeLibrary(raw) {
   };
 }
 
-/* Une itens importados sem expulsar os locais quando o teto é atingido: o
- * slice(-max) antigo trocava a biblioteca do usuário pela do backup. */
+/* Merge imported items without evicting local ones when the ceiling is hit:
+ * the old slice(-max) replaced the user's library with the backup's. */
 function mergeLibraryList(local, incoming, kind, max) {
   const target = Array.isArray(local) ? local.slice() : [];
   const taken = target.map((e) => e.id);
@@ -185,9 +186,9 @@ function mergeLibraryList(local, incoming, kind, max) {
   return { merged: target, added: added, skipped: skipped };
 }
 
-/* Whitelist estrita: só o modelo e as chaves/urls de vendors conhecidos
- * passam, então um backup não injeta router, URL de terceiros ou campos
- * extras no config. */
+/* Strict allowlist: only the model and the keys/urls of known vendors pass,
+ * so a backup cannot inject a router, a third-party URL, or extra fields
+ * into the config. */
 function normalizeConfig(raw, vendors) {
   const src = isStoreObject(raw) ? raw : {};
   const list = Array.isArray(vendors) ? vendors : [];

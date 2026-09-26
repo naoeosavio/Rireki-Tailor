@@ -1,6 +1,6 @@
-// Chat por seção — assistente contextual do RirekiTailor.
-// Usa TellSDK.tell one-shot com system prompt contextual + histórico em `context`.
-// Histórico persistido por seção: section.chat = [{role:'user'|'assistant', content, at}].
+// Per-section chat — RirekiTailor's contextual assistant.
+// Uses one-shot TellSDK.tell with a contextual system prompt + history in `context`.
+// History persisted per section: section.chat = [{role:'user'|'assistant', content, at}].
 
 (function () {
   'use strict';
@@ -12,8 +12,8 @@
   const $ = (id) => document.getElementById(id);
 
   const FIELD_LABELS = {
-    role: 'Vaga',
-    master: 'CV master',
+    role: 'Job',
+    master: 'Master CV',
     cvOut: 'CV_OUT.md',
     cover: 'cover.md',
     tex: 'CV.tex',
@@ -37,7 +37,7 @@
     },
   ];
 
-  // ---------- markdown-lite (seguro: escapa HTML antes) ----------
+  // ---------- markdown-lite (safe: escapes HTML first) ----------
   function escHtml(t) {
     return String(t)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -81,7 +81,7 @@
     return out.join('');
   }
 
-  // ---------- contexto ----------
+  // ---------- context ----------
   function contextParts(s) {
     const isPt = s.lang === 'pt';
     const defs = [
@@ -156,8 +156,8 @@ Be concise and direct; use short lists when helpful.`)
       tools.className = 'msg-tools';
       const btn = document.createElement('button');
       btn.className = 'icon-btn';
-      btn.title = 'Copiar mensagem';
-      btn.setAttribute('aria-label', 'Copiar mensagem');
+      btn.title = 'Copy message';
+      btn.setAttribute('aria-label', 'Copy message');
       btn.dataset.copyMsg = String(idx);
       btn.innerHTML = '<svg class="ic"><use href="#i-copy"/></svg>';
       tools.appendChild(btn);
@@ -194,7 +194,7 @@ Be concise and direct; use short lists when helpful.`)
     const box = $('chat-messages');
     box.innerHTML = '';
     if (!s) {
-      box.appendChild(msgEl('assistant', '<p>Crie uma seção para conversar.</p>'));
+      box.appendChild(msgEl('assistant', '<p>Create a section to start chatting.</p>'));
       setInputEnabled(false);
       return;
     }
@@ -232,8 +232,8 @@ Be concise and direct; use short lists when helpful.`)
     removeTyping();
     const box = $('chat-messages');
     const isKeyErr = e && e.code === 'NO_KEY';
-    const div = msgEl('error', '<p><b>Falhou:</b> ' + escHtml(e.message || e) + '</p>'
-      + (isKeyErr ? '<p><button type="button" class="sm" data-open-cfg>Abrir configuração LLM</button></p>' : ''));
+    const div = msgEl('error', '<p><b>Failed:</b> ' + escHtml(e.message || e) + '</p>'
+      + (isKeyErr ? '<p><button type="button" class="sm" data-open-cfg>Open LLM settings</button></p>' : ''));
     box.appendChild(div);
     scrollBottom();
   }
@@ -249,7 +249,7 @@ Be concise and direct; use short lists when helpful.`)
     ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
   }
 
-  // ---------- ações ----------
+  // ---------- actions ----------
   async function send() {
     const s = deps.getSection();
     const input = $('chat-input');
@@ -261,8 +261,8 @@ Be concise and direct; use short lists when helpful.`)
     input.value = '';
     autogrow();
     render();
-    /* Persiste antes de chamar o LLM: se a requisição falhar, o saveAll() do
-     * sucesso nunca roda e a pergunta se perdia no reload. */
+    /* Persist before calling the LLM: if the request fails, the saveAll() on
+     * success never runs and the question is lost on reload. */
     deps.saveAll();
 
     busy = true;
@@ -290,9 +290,9 @@ Be concise and direct; use short lists when helpful.`)
     if (!s) return;
     if (!s.chat || !s.chat.length) return;
     const ok = await deps.confirm({
-      title: 'Limpar conversa?',
-      message: 'O histórico do assistente desta seção será apagado. As demais informações da seção são mantidas.',
-      confirmText: 'Limpar',
+      title: 'Clear conversation?',
+      message: 'The assistant history for this section will be erased. The rest of the section is kept.',
+      confirmText: 'Clear',
       danger: true,
     });
     if (!ok) return;
@@ -300,7 +300,7 @@ Be concise and direct; use short lists when helpful.`)
     deps.touch(s);
     deps.saveAll();
     render();
-    deps.toast('Conversa limpa', 'ok');
+    deps.toast('Conversation cleared', 'ok');
   }
 
   async function copyMsg(idx) {
@@ -308,9 +308,9 @@ Be concise and direct; use short lists when helpful.`)
     if (!s || !s.chat || !s.chat[idx]) return;
     try {
       await navigator.clipboard.writeText(s.chat[idx].content);
-      deps.toast('Mensagem copiada', 'ok');
+      deps.toast('Message copied', 'ok');
     } catch (e) {
-      deps.toast('Não consegui copiar: ' + e.message, 'err');
+      deps.toast('Could not copy: ' + e.message, 'err');
     }
   }
 

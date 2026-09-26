@@ -98,7 +98,7 @@ test('normalizeSection: numeric text fields are dropped, not stringified', () =>
   assert.strictEqual(s.role, '');
   assert.strictEqual(s.master, '');
   assert.strictEqual(s.cvOut, '');
-  assert.strictEqual(s.name, 'Vaga nova');
+  assert.strictEqual(s.name, 'New job');
 });
 
 test('normalizeSection: an invalid updatedAt becomes a usable timestamp', () => {

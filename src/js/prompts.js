@@ -1,12 +1,12 @@
-// Prompts LLM — extraídos verbatim do CLI (bin/rireki-tailor + bin/gen-pdf).
-// O prompt ATS usa o arquivo data/PROMPT_ATS.md (mantém sincronia com o repositório).
+// LLM prompts — extracted verbatim from the CLI (bin/rireki-tailor + bin/gen-pdf).
+// The ATS prompt uses the data/PROMPT_ATS.md file (keeps it in sync with the repo).
 
 let atsBaseCache = null;
 
 async function loadAtsBase() {
   if (atsBaseCache !== null) return atsBaseCache;
   const r = await fetch('data/PROMPT_ATS.md');
-  if (!r.ok) throw new Error('Falha ao carregar data/PROMPT_ATS.md: HTTP ' + r.status);
+  if (!r.ok) throw new Error('Failed to load data/PROMPT_ATS.md: HTTP ' + r.status);
   atsBaseCache = await r.text();
   return atsBaseCache;
 }
