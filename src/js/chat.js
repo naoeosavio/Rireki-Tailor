@@ -261,6 +261,9 @@ Be concise and direct; use short lists when helpful.`)
     input.value = '';
     autogrow();
     render();
+    /* Persiste antes de chamar o LLM: se a requisição falhar, o saveAll() do
+     * sucesso nunca roda e a pergunta se perdia no reload. */
+    deps.saveAll();
 
     busy = true;
     setInputEnabled(false);

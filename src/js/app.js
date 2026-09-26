@@ -23,12 +23,18 @@
     pitch: 'data/pitch.md',
   };
 
+  /* Campos de texto por etapa — a lista canônica usada por updateAllCounters,
+   * fillStep1 e clearStep1Fields. */
+  const STEP1_FIELDS = ['role', 'master', 'template', 'pitch'];
+  const STEP2_FIELDS = ['cvOut', 'cover', 'tex'];
+  const TEXT_FIELDS = STEP1_FIELDS.concat(STEP2_FIELDS);
+
   let config = {
     model: 'j',
     keys: {},
     urls: {},
   };
-  let sections = {};
+  let sections = Object.create(null);
   let library = { masters: [], templates: [] };
   let activeId = null;
   let engine = null;
@@ -65,21 +71,43 @@
   // ---------- Tema ----------
   function applyTheme(t) {
     document.documentElement.dataset.theme = t;
-    localStorage.setItem(LS_THEME, t);
+    try {
+      localStorage.setItem(LS_THEME, t);
+    } catch (_) { /* storage bloqueado: o tema segue só em memória */ }
   }
 
   function initTheme() {
-    const saved = localStorage.getItem(LS_THEME);
+    /* localStorage pode lançar (SecurityError com storage bloqueado,
+     * iframe opaco): sem o try, o init() morria antes de ligar qualquer
+     * handler e a página ficava morta. */
+    let saved = null;
+    try {
+      saved = localStorage.getItem(LS_THEME);
+    } catch (_) { saved = null; }
     const t = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
     applyTheme(t);
   }
 
   // ---------- Persistência ----------
+  let quotaWarned = false;
+
   function saveAll() {
-    localStorage.setItem(LS_CONFIG, JSON.stringify(config));
-    localStorage.setItem(LS_SECTIONS, JSON.stringify(sections));
-    localStorage.setItem(LS_LIBRARY, JSON.stringify(library));
-    localStorage.setItem(LS_ACTIVE, activeId || '');
+    try {
+      localStorage.setItem(LS_CONFIG, JSON.stringify(config));
+      localStorage.setItem(LS_SECTIONS, JSON.stringify(sections));
+      localStorage.setItem(LS_LIBRARY, JSON.stringify(library));
+      localStorage.setItem(LS_ACTIVE, activeId || '');
+    } catch (e) {
+      const isQuota = e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014);
+      if (isQuota && !quotaWarned) {
+        quotaWarned = true;
+        toast('Armazenamento do navegador cheio — as últimas edições não foram salvas. Exporte um backup e apague seções antigas.', 'err', 9000);
+      } else if (!isQuota) {
+        console.error('save failed', e);
+      }
+      return;
+    }
+    quotaWarned = false;
     const s = active();
     if (s && s.updatedAt) {
       const el = $('last-saved');
@@ -90,48 +118,64 @@
   /* Digitação dispara saveAll a cada tecla — serializa TODAS as seções.
    * Debounce de 400ms; flush no beforeunload garante a última edição. */
   let saveTimer = null;
+  let libSaveTimer = null;
   function saveAllDebounced() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveAll, 400);
   }
   function flushPendingSave() {
-    if (saveTimer === null) return;
-    clearTimeout(saveTimer);
-    saveTimer = null;
-    saveAll();
+    /* Dois timers pendentes (digitação + biblioteca): descarregar a aba sem
+     * limpar o da biblioteca perdia a edição — o saveAll() do unload nunca
+     * via o libDebouncedSave(). */
+    let pending = false;
+    if (saveTimer !== null) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      pending = true;
+    }
+    if (libSaveTimer !== null) {
+      clearTimeout(libSaveTimer);
+      libSaveTimer = null;
+      pending = true;
+    }
+    if (pending) saveAll();
   }
 
-  // Backfills DEFAULT_URLS (llm.js loads before app.js) so the URL
-  // fields render pre-filled; user edits win over defaults.
-  function migrateConfig(c) {
-    const out = {
-      model: c.model || 'j',
-      keys: Object.assign({}, c.keys),
-      urls: Object.assign({}, c.urls),
-    };
-    if (c.apiKey && !out.keys.openai) out.keys.openai = c.apiKey;
-    if (c.baseURL && !out.urls.openai) out.urls.openai = c.baseURL;
+  /* Preenche DEFAULT_URLS (llm.js carrega antes de app.js) para os campos
+   * de URL já aparecerem preenchidos; o que o usuário editar tem prioridade. */
+  function backfillDefaultUrls(cfg) {
     LLM_VENDORS.forEach((v) => {
-      if (!out.urls[v] && DEFAULT_URLS[v]) out.urls[v] = DEFAULT_URLS[v];
+      if (!cfg.urls[v] && DEFAULT_URLS[v]) cfg.urls[v] = DEFAULT_URLS[v];
     });
-    return out;
+  }
+
+  /* Cada chave é lida isoladamente: uma chave corrompida não pode derrubar as
+   * outras, e o valor bruto vai para <chave>.backup em vez de ser sobrescrito
+   * por um reset — o saveAll() do fim do init() gravaria esse reset por cima
+   * dos dados do usuário. */
+  function loadJsonKey(key, fallback) {
+    const read = readJsonSafe(localStorage, key);
+    if (!read.found) return fallback;
+    if (!read.ok) {
+      stashCorruptValue(localStorage, key, read.raw);
+      console.warn('localStorage:', key, 'corrompido — valor bruto preservado em', key + '.backup');
+      return fallback;
+    }
+    return read.value;
   }
 
   function loadAll() {
+    config = normalizeConfig(loadJsonKey(LS_CONFIG, {}), LLM_VENDORS);
+    backfillDefaultUrls(config);
+    sections = normalizeSections(loadJsonKey(LS_SECTIONS, {}));
+    library = normalizeLibrary(loadJsonKey(LS_LIBRARY, null));
+    /* Leitura direta (não passa pelo readJsonSafe): sem o try, storage
+     * bloqueado derrubava o init antes de ligar os handlers. */
+    let a = null;
     try {
-      const c = JSON.parse(localStorage.getItem(LS_CONFIG) || '{}');
-      config = migrateConfig(c);
-      sections = JSON.parse(localStorage.getItem(LS_SECTIONS) || '{}');
-      library = JSON.parse(localStorage.getItem(LS_LIBRARY) || 'null') || { masters: [], templates: [] };
-      if (!library.masters) library.masters = [];
-      if (!library.templates) library.templates = [];
-      const a = localStorage.getItem(LS_ACTIVE);
-      if (a && sections[a]) activeId = a;
-    } catch (e) {
-      console.error('load failed', e);
-      sections = {};
-      library = { masters: [], templates: [] };
-    }
+      a = localStorage.getItem(LS_ACTIVE);
+    } catch (_) { a = null; }
+    activeId = a && sections[a] ? a : null;
   }
 
   // ---------- Helpers ----------
@@ -196,12 +240,13 @@
   }
 
   function updateAllCounters() {
-    ['role', 'master', 'template', 'pitch', 'cvOut', 'cover', 'tex'].forEach(updateCounter);
+    TEXT_FIELDS.forEach(updateCounter);
   }
 
   // ---------- Toasts ----------
   function toast(msg, type, ms) {
     const box = $('toasts');
+    if (!box) return;
     const el = document.createElement('div');
     el.className = 'toast ' + (type || 'info');
     const body = document.createElement('div');
@@ -277,7 +322,7 @@
       const okBtn = document.createElement('button');
       okBtn.type = 'button';
       okBtn.className = 'primary' + (opts.danger ? ' danger' : '');
-      okBtn.textContent = opts.okText || 'OK';
+      okBtn.textContent = opts.confirmText || opts.okText || 'OK';
       okBtn.addEventListener('click', ok);
       foot.appendChild(okBtn);
 
@@ -320,7 +365,6 @@
   // ---------- Biblioteca global (masters/templates) ----------
   function libArr(kind) { return kind === 'master' ? library.masters : library.templates; }
 
-  let libSaveTimer = null;
   function libDebouncedSave() {
     clearTimeout(libSaveTimer);
     libSaveTimer = setTimeout(saveAll, 400);
@@ -406,6 +450,10 @@
     const upBtn = mkIcon('upload', 'Carregar arquivo');
     upBtn.addEventListener('click', () => pickFile('.md,.tex,.txt').then(async (f) => {
       if (!f) return;
+      if (isFileTooBig(f.size)) {
+        toast('Arquivo muito grande — limite de 8 MB por upload.', 'err', 6000);
+        return;
+      }
       entry.content = await readFile(f);
       libDebouncedSave();
       renderLibrary();
@@ -745,19 +793,31 @@
   }
 
   async function importSections(file) {
+    /* Sem teto, um arquivo de GBs ia inteiro para a RAM via FileReader. */
+    if (isFileTooBig(file.size)) {
+      toast('Backup muito grande — limite de 8 MB por importação.', 'err', 6000);
+      return;
+    }
     try {
       const data = JSON.parse(await readFile(file));
-      if (!data.sections || typeof data.sections !== 'object') throw new Error('JSON sem "sections"');
-      Object.assign(sections, data.sections);
-      if (data.config) Object.assign(config, data.config);
-      if (data.library && typeof data.library === 'object') {
-        ['masters', 'templates'].forEach((k) => {
-          if (!Array.isArray(data.library[k])) return;
-          const target = library[k] || (library[k] = []);
-          data.library[k].forEach((incoming) => {
-            if (!target.some((e) => e.id === incoming.id)) target.push(incoming);
-          });
-          if (target.length > LIB_MAX) library[k] = target.slice(-LIB_MAX);
+      if (!data || typeof data !== 'object' || !data.sections || typeof data.sections !== 'object' || Array.isArray(data.sections)) {
+        throw new Error('JSON sem "sections"');
+      }
+      let skippedSections = 0;
+      Object.keys(data.sections).forEach((id) => {
+        /* Lote de import limitado: milhares de seções congelariam o render
+         * e persistiriam o congelamento. Quem já existe pode atualizar. */
+        if (!sections[id] && Object.keys(sections).length >= STORE_MAX_SECTIONS) { skippedSections++; return; }
+        sections[id] = normalizeSection(data.sections[id]);
+      });
+      if (data.config) Object.assign(config, normalizeConfig(data.config, LLM_VENDORS));
+      if (data.library && typeof data.library === 'object' && !Array.isArray(data.library)) {
+        [['masters', 'master'], ['templates', 'template']].forEach(([listKey, kind]) => {
+          const merged = mergeLibraryList(library[listKey], data.library[listKey], kind, LIB_MAX);
+          library[listKey] = merged.merged;
+          if (merged.skipped) {
+            toast('Biblioteca: ' + merged.skipped + ' item(ns) ignorado(s) — limite de ' + LIB_MAX + ' ou id já existente.', 'warn', 6000);
+          }
         });
       }
       const ids = Object.keys(sections);
@@ -767,7 +827,7 @@
       renderLibSelects();
       fillStep1();
       fillConfig();
-      toast('Importado: ' + ids.length + ' seção(ões)', 'ok');
+      toast('Importado: ' + ids.length + ' seção(ões)' + (skippedSections ? ' — ' + skippedSections + ' ignorada(s) pelo limite de ' + STORE_MAX_SECTIONS : ''), skippedSections ? 'warn' : 'ok');
     } catch (e) {
       toast('Importação falhou: ' + e.message, 'err');
     }
@@ -799,6 +859,12 @@
       btn.addEventListener('click', async () => {
         const f = await pickFile(btn.dataset.upload === 'json' ? '.json' : '.md,.tex,.txt');
         if (!f) return;
+        /* FileReader sem teto: um arquivo de GBs ia inteiro para a RAM e
+         * depois estourava a cota do localStorage no saveAll. */
+        if (isFileTooBig(f.size)) {
+          toast('Arquivo muito grande — limite de 8 MB por upload.', 'err', 6000);
+          return;
+        }
         if (btn.dataset.upload === 'json') return importSections(f);
         const s = active();
         if (!s) return;
@@ -876,12 +942,28 @@
     }
   }
 
+  function clearStep1Fields() {
+    TEXT_FIELDS.forEach((k) => { $(k).value = ''; });
+    $('lang').value = 'en';
+    $('genCover').checked = false;
+  }
+
   function fillStep1() {
     const s = active();
-    if (!s) { $('step1-empty').style.display = 'block'; return; }
+    if (!s) {
+      /* Sem seção ativa, o formulário e o PDF que sobraram da seção apagada
+       * ficariam na tela como se fossem dados da seção corrente. */
+      $('step1-empty').style.display = 'block';
+      clearStep1Fields();
+      hidePdf();
+      updateAllCounters();
+      renderLibSelects();
+      if (window.Chat) Chat.render();
+      return;
+    }
     $('step1-empty').style.display = 'none';
-    ['role', 'master', 'template', 'pitch'].forEach((k) => { $(k).value = s[k]; });
-    ['cvOut', 'cover', 'tex'].forEach((k) => { $(k).value = s[k] || ''; });
+    STEP1_FIELDS.forEach((k) => { $(k).value = s[k]; });
+    STEP2_FIELDS.forEach((k) => { $(k).value = s[k] || ''; });
     $('lang').value = s.lang;
     $('genCover').checked = s.genCover;
     if (pdfSectionId !== activeId) hidePdf();
@@ -960,9 +1042,16 @@
         const e = new PdfTeXEngine();
         e.loadEngine().then(() => {
           engine = e;
+          enginePromise = null;
           setStatus('Engine pronto', 'ok');
           resolve(e);
-        }, reject);
+        }, (err) => {
+          /* Sem limpar a promise, a rejeição ficava cacheada e nenhum
+           * compile posterior retryava — a página só voltava a funcionar
+           * com reload. */
+          enginePromise = null;
+          reject(err);
+        });
       });
     }
     return enginePromise;
@@ -1047,17 +1136,23 @@
   }
 
   function bindConfig() {
-    $('cfg-model').addEventListener('input', () => {
-      config.model = $('cfg-model').value.trim() || 'g';
+    /* Vendors sem linha no HTML (ou HTML futuro sem a linha) não podem
+     * derrubar o init: sem o guard, o TypeError abortava o resto dos
+     * listeners e o Chat.init — página morta. */
+    const modelEl = $('cfg-model');
+    if (modelEl) modelEl.addEventListener('input', () => {
+      config.model = modelEl.value.trim() || 'g';
       saveAllDebounced();
     });
     LLM_VENDORS.forEach((v) => {
-      $('cfg-key-' + v).addEventListener('input', () => {
-        config.keys[v] = $('cfg-key-' + v).value.trim();
+      const k = $('cfg-key-' + v);
+      const u = $('cfg-url-' + v);
+      if (k) k.addEventListener('input', () => {
+        config.keys[v] = k.value.trim();
         saveAllDebounced();
       });
-      $('cfg-url-' + v).addEventListener('input', () => {
-        config.urls[v] = $('cfg-url-' + v).value.trim();
+      if (u) u.addEventListener('input', () => {
+        config.urls[v] = u.value.trim();
         saveAllDebounced();
       });
     });
