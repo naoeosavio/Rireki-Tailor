@@ -487,6 +487,22 @@
     return text.slice(i, j + delim.length).trim();
   }
 
+  const TEX_END_RE = /\\end\s*\{(?:document|end)\}/i;
+
+  function sanitizeTex(text) {
+    const cleaned = sanitizeFenced(String(text == null ? '' : text))
+      .replace(/<\/?RUN>/gi, '')
+      .replace(/^[\t ]*(?:cat|tee)\b[^\n]*<<-?[\t ]*['"]?[A-Za-z_]\w*['"]?[^\n]*$/gm, '')
+      .replace(/^[\t ]*(?:pdflatex|xelatex|lualatex|latex|latexmk)\b[^\n]*$/gm, '')
+      .replace(/^[\t ]*(?:EOL|EOF)[\t ]*$/gm, '');
+    const i = cleaned.indexOf('\\documentclass');
+    if (i === -1) return cleaned.trim();
+    const body = cleaned.slice(i);
+    const m = body.match(TEX_END_RE);
+    if (!m) return body.trim();
+    return body.slice(0, m.index).trim() + '\n\n\\end{document}\n';
+  }
+
   function pickFile(accept) {
     return new Promise((res) => {
       const input = document.createElement('input');
@@ -926,7 +942,7 @@
     if (!(s.cvOut.trim() || s.master.trim())) { toast('Sem conteúdo markdown para converter.', 'warn'); return; }
     if (!s.template.trim()) { toast('O template LaTeX está vazio — carregue um da biblioteca.', 'warn'); return; }
     setStatus('Convertendo markdown → LaTeX (' + config.model + ')…', 'busy');
-    s.tex = sanitizeLatexBody(await tellChat(buildTexPrompt(s.cvOut || s.master, s.template), config));
+    s.tex = sanitizeTex(await tellChat(buildTexPrompt(s.cvOut || s.master, s.template), config));
     $('tex').value = s.tex;
     updateCounter('tex');
     touch(s); saveAll();

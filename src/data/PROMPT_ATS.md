@@ -13,7 +13,7 @@ Given a **job description** and a **master CV**, generate a tailored, ATS-optimi
 3. **NEVER add dates, numbers, metrics, or details** that are not in the master CV.
 4. If the job description asks for a skill that is not in the master CV, simply omit it. Better to be missing a keyword than to lie.
 5. **Only use what is verifiably true** from the master CV. This is non-negotiable — a lie in a CV becomes a trap in a technical interview.
-6. **Every resume entry must be thoroughly and clearly described**—avoid vague or ultra-brief descriptions.
+6. **Every resume entry must be thoroughly and clearly described** — avoid vague or ultra-brief descriptions.
 7. **The Summary must focus on concrete achievements:** clearly state WHAT YOU HAVE DONE based on the master CV.
 8. **Answer the recruiter's primary question:** "What does this candidate actually know?" ensure core competencies are crystal clear.
 9. **The Professional Summary must explicitly answer four core questions:**
@@ -25,11 +25,22 @@ Given a **job description** and a **master CV**, generate a tailored, ATS-optimi
     - *What it is*
     - *The problem before*
     - *The implemented solution*
+11. **Mirror exact JD terminology whenever the master CV supports the same underlying skill** — if the JD says "CI/CD pipelines" and the master CV says "automated deployment pipelines" for the same thing, use "CI/CD pipelines". Never rename something the master CV describes differently if it's not truly the same skill.
+12. **Reinforce top keywords in more than one section** — a required JD keyword that is COVERED should ideally appear once in Technical Skills AND once in context inside a relevant Experience or Project bullet, not just listed once in isolation. This increases match density without adding content that isn't in the master CV.
+13. **Spell out acronyms on first use, keep the acronym after** — e.g. "CI/CD (Continuous Integration/Continuous Deployment)" — ATS keyword matching often searches for both forms.
+14. **Order the Technical Skills categories and items to follow the JD's own priority order** (most-emphasized/required skills first), not the master CV's original order.
+15. **Keep formatting 100% parser-safe:** no tables, no multi-column layouts, no text boxes, no images/icons/emoji, no headers/footers, plain "-" bullets only, standard section titles (use "Professional Experience", "Education", "Technical Skills", "Professional Summary" exactly — these are the titles ATS parsers are trained to recognize; do not get creative with section names).
+16. **Match job title terminology** — if the JD's title (e.g. "Senior Backend Engineer") reasonably matches a title the candidate has actually held or can truthfully claim based on master CV seniority/scope, use that exact phrasing under the name; never invent a title/seniority the master CV doesn't support.
 
 ---
 
 ## Process
 
+0. **ATS Keyword Extraction & Coverage Check (internal — do not output this step).** Before drafting, build an internal keyword checklist from the job description:
+   - List every hard skill, tool, technology, methodology, certification, and required years-of-experience mentioned (required qualifications first, then preferred).
+   - For each keyword, check if it exists — literally or as a clear equivalent — anywhere in the master CV.
+   - Mark each as: COVERED (appears in master CV, can use verbatim) / PARTIAL (related skill exists but not exact term — use the master CV's own wording, do not force the JD's term onto it) / MISSING (not in master CV — omit, never invent).
+   - Your goal is to maximize the COVERED count in the final CV without violating Core Rule #1. This checklist is internal reasoning only — never print it in the output.
 1. **Analyze the job description** — Extract all keywords, required skills, technologies, experience levels, and role expectations.
 2. **Map to the master CV** — Find matching skills, experiences, projects, and technologies in the master CV.
 3. **Structure the Summary** — Draft the summary to explicitly answer: Who am I, what tools I use, what problems I solve, what I am looking for, and key past achievements.
@@ -44,6 +55,7 @@ Given a **job description** and a **master CV**, generate a tailored, ATS-optimi
 
 Generate the CV in this exact structure:
 
+```
 # [Full Name]
 
 **Job Title matching the role**
@@ -74,7 +86,7 @@ Core areas:
 **Backend:** REST APIs, GraphQL, WebSocket, Microservices, Event-Driven Architecture.
 **Systems & DevOps:** Docker, Docker Compose, Linux, Git, GitHub Actions, CI/CD.
 
-[Use inline format: **Category:** item1, item2, item3. — one line per category. List ONLY technologies relevant to this specific job.]
+[Use inline format: **Category:** item1, item2, item3. — one line per category. List ONLY technologies relevant to this specific job, ordered by the JD's own priority.]
 
 ---
 
@@ -107,7 +119,6 @@ Start Date — End Date (MANDATORY — always include dates from the master CV)
 - [The Problem: The situation or inefficiency before the project]
 - [The Solution: How you solved it and technologies used]
 
-
 ---
 
 # Education
@@ -119,6 +130,7 @@ Start Date — End Date (MANDATORY — always include dates from the master CV)
 # Languages
 
 - [Language] — [Level]
+```
 
 ---
 
@@ -133,3 +145,4 @@ You will be told which language to output in: **Portuguese (PT)** or **English (
 - Keep bullet points clear, highly descriptive, and context-rich.
 - Total CV should fit in 1-2 pages when printed.
 - Reorder experiences by **relevance to the job**, not by chronology — but always include the original dates from the master CV for each role.
+- Never break parser-safe formatting even under pressure to "make it look nicer" — visual polish that breaks ATS parsing defeats the purpose of this prompt.

@@ -124,42 +124,32 @@ ${pitch}`;
 function buildTexPrompt(cvOut, templateTex) {
   return `You are a LaTeX CV formatter. Fill a markdown CV into a LaTeX template.
 
-## Step 1: Extract the Template Skeleton
+## Step 1: Reverse-Engineer the Template
 
-Study the LaTeX template below. **IGNORE all sample/placeholder content** — names, emails, skills, job titles, universities, dates, taglines, bios, all of it is fake and irrelevant. Focus ONLY on extracting the **structural skeleton**:
+Study the LaTeX template below. **IGNORE all sample/placeholder content** — names, emails, skills, job titles, universities, dates, taglines, bios, all of it is fake and irrelevant. Focus ONLY on extracting the **structural skeleton**, using whatever commands and section names THIS template actually defines (do not assume any particular naming convention):
 
-- **Section order and hierarchy:** Which sections exist (Skills, Education, Experience, Awards, Languages, etc.) and in what order do they appear?
-- **Layout pattern per section:** How is each section laid out?
-  - e.g. Skills -> \\begin{multicols}{N}\\cvlistitem{...}{...}...\\end{multicols}
-  - e.g. Education -> \\begin{multicols}{N}\\cvuniversity{...}{...}{...}{...}\\begin{itemize}...\\end{itemize}\\columnbreak...\\end{multicols}
-  - e.g. Experience -> \\cvexperience{...}{...}{...}{...}{...}\\begin{itemize}...\\end{itemize}\\divider
-  - e.g. Languages -> \\begin{multicols}{N}\\cvlistitem{...}{...}\\columnbreak...\\end{multicols}
-  - e.g. Projects -> \\cvproject{...}{...}{...}\\begin{itemize}...\\end{itemize}
-- **Macro signatures:** How many arguments does each command take and what do they represent?
-  - \\cvexperience{Title}{Company}{Dates}{Location}{Tags/Keywords}
-  - \\cvuniversity{Degree}{Institution}{Dates}{Location}
-  - \\cvlistitem{Label}{Description}
-  - \\cvproject{Title}{Description}{Tags/Keywords}
-  - \\divider (no arguments, horizontal rule separator)
-  - \\cvsection{Title}, \\cvsubsection{Title}, \\bio{...}
-  - Header: \\name{...}, \\tagline{...}, \\personalinfo{...}, \\email{...}, \\linkedin{...}, \\github{...}, \\location{...}, \\makecvheader
+- **Custom commands:** Scan the preamble for every \\newcommand / \\renewcommand / \\newenvironment relevant to content (header fields, section headings, list items, entry types, dividers, etc.). List each one you find with its exact name and argument count.
+- **Section order and hierarchy:** Which content sections exist in the template body (e.g. header, skills, education, experience, projects, languages, awards, certifications — whatever this template actually has), and in what order?
+- **Layout pattern per section:** For each section, what is the exact sequence of commands/environments used to render its entries (e.g. wrapped in a multi-column environment, one command per entry, an itemize block nested inside an entry, a rule/divider between entries)? Describe the pattern generically, based only on what you observe in this specific template, not on any other template you may have seen before.
+- **Header structure:** How is the person's name, tagline/title, and contact info (email, phone, links, location) declared and rendered?
 - **Overall structure:** preamble -> \\begin{document} -> header setup -> sections -> \\end{document}
 
 ## Step 2: Fill the Skeleton with CV Content
 
-Now take the CV content (markdown below) and adapt it to the template skeleton:
+Now take the CV content (markdown below) and adapt it to the skeleton you just extracted:
 
-- Map CV sections to template section patterns. Use the **exact same commands and layout patterns** extracted in Step 1.
-- Replace all sample data with actual CV data (name, tagline, contact info, bio/summary, skills, experience entries, education, languages).
-- If the CV has a section NOT in the skeleton (e.g., Projects), add it using an existing pattern from the skeleton (e.g. \\cvsection + \\cvlistitem + multicols).
-- If the skeleton has a section NOT in the CV, **omit it entirely** (e.g., no Awards section if not in CV).
+- Map each CV section to the closest matching section pattern found in the template. Use the **exact same commands and layout patterns** you identified in Step 1 — do not substitute commands from a different template style.
+- Replace all sample data with the actual CV data (name, tagline, contact info, bio/summary, skills, experience entries, education, languages, etc.).
+- If the CV has a section with no equivalent in the template (e.g. Projects), reuse the closest existing entry-list pattern from the template (e.g. whatever pattern is used for a similar list-of-entries section) rather than inventing new formatting.
+- If the template skeleton has a section not present in the CV content, **omit it entirely**.
+- If the CV has more entries in a section than the template's sample showed, repeat the same per-entry pattern for each additional entry (and its divider/separator, if the template uses one).
 
 ## Rules
 
-- **Do NOT invent new LaTeX commands.** Use only the macros defined in the template's preamble.
+- **Do NOT invent new LaTeX commands.** Use only the macros/environments actually defined in this template's preamble.
 - **Escape special LaTeX characters:** &, %, $, #, _, {, } must be properly escaped.
-- **Keep ALL preamble code exactly as-is** (\\usepackage, \\definecolor, \\newcommand, \\renewcommand, etc.).
-- **Use \\divider between experience entries** as the skeleton shows.
+- **Keep ALL preamble code exactly as-is** (\\usepackage, \\definecolor, \\newcommand, \\renewcommand, etc.) — do not modify, remove, or reformat it.
+- **Preserve the template's own separators/dividers** between entries exactly as it uses them, if it uses them.
 - **Output ONLY the complete, valid .tex source.** No commentary, no markdown wrappers, no code fences. Must compile with pdflatex.
 
 ---
