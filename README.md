@@ -162,3 +162,13 @@ NODE_PATH=$(npm root -g) node test/e2e.js      # compile completo → assert %PD
 1. Testar a geração LLM real (ATS + cover + tex) com uma chave própria no painel "LLM".
 2. Remover `test/probe.js` quando o harness deixar de ser necessário.
 3. Publicar em hosting estático (todo o `src/` já é self-contained).
+
+## License
+
+Copyright (C) 2026 RirekiTailor — `SPDX-License-Identifier: AGPL-3.0-only`.
+
+This project is licensed under the **GNU Affero General Public License v3.0 only**.
+See the full text at [`LICENSE`](./LICENSE).
+
+Dependencies vendored (`src/vendor/tell/`, `src/vendor/swiftlatex/`) retain 
+their own licenses (MIT/upstream); the combined work is distributed as AGPL-3.0.

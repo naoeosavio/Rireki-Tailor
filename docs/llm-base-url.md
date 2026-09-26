@@ -35,7 +35,7 @@ preencha o campo.
 | `fireworks` | Não (tem default) | `https://api.fireworks.ai/inference/v1` | `llama-v3p1-8b-instruct` |
 | `moonshotai` | Não (tem default) | `https://api.moonshot.ai/v1` | `kimi-k2` |
 | `openrouter` | **Sim** | `https://openrouter.ai/api/v1` | `z-ai/glm-5.3-flash` |
-| `alibaba` | **Sim** | — (endpoint DashScope `compatible-mode` da sua região) | `alibaba:qwen-max` |
+| `alibaba` | Não (tem default intl) | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` | `alibaba:qwen-max` |
 | `zai` | Não (tem default) | `https://api.z.ai/api/paas/v4` | `zai:glm-5.3` (ou atalho `z`) |
 | `vast` | **Sim** | — (URL do seu servidor Vast.ai) | `vast:<modelo-da-instancia>` |
 | `local` | Não (padrão Ollama) | `http://localhost:11434/v1` | `local:llama3.1` |
@@ -91,7 +91,7 @@ use sempre o slug com `/`.
 |---|---|---|
 | `baseURL must be a non-empty string` | URL vazia em vendor que exige (openrouter, vast) | Preencher com o `Padrão` da tabela (vast: URL do seu servidor) |
 | HTTP 404 com `/chat/completions` duplicado | Colou a URL completa no campo | Voltar para só a base (`.../v1`) |
-| HTTP 401 | Key do vendor errado ou ausente — ou URL vazia no `alibaba` (cai no endpoint errado) | Conferir `cfg-key-<vendor>` do modelo em uso; no `alibaba`, preencher a URL do DashScope |
+| HTTP 401 | Key do vendor errado ou ausente | Conferir `cfg-key-<vendor>` do modelo em uso (`alibaba` usa o padrão intl; região China: trocar pela URL do DashScope CN) |
 | Falha de CORS/rede no browser | Provedor bloqueia browser | Usar a **Via 2** (proxy) |
 | `NO_KEY` / `Config LLM incompleta` | Nenhuma key preenchida | Preencher a key do vendor do modelo |
 

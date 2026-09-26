@@ -14,8 +14,7 @@ const LLM_VENDORS = [
 // Keep in sync with docs/llm-base-url.md. Loaded before app.js,
 // so app.js backfills them into the visible config form.
 // Vendors without entry here have no reliable default: fill the
-// URL field (alibaba: DashScope compatible-mode endpoint of your
-// region; vast/local: your own server) or the SDK call fails.
+// URL field (vast: your own server URL) or the SDK call fails.
 const DEFAULT_URLS = {
   openai: 'https://api.openai.com/v1',
   anthropic: 'https://api.anthropic.com',
@@ -26,6 +25,7 @@ const DEFAULT_URLS = {
   fireworks: 'https://api.fireworks.ai/inference/v1',
   moonshotai: 'https://api.moonshot.ai/v1',
   openrouter: 'https://openrouter.ai/api/v1',
+  alibaba: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
   zai: 'https://api.z.ai/api/paas/v4',
   local: 'http://localhost:11434/v1',
 };
