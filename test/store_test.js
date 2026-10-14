@@ -113,6 +113,12 @@ test('normalizeSection: an unknown lang falls back to en', () => {
   assert.strictEqual(store.normalizeSection({ lang: 42 }).lang, 'en');
 });
 
+test('normalizeSection: texHash survives as a string, hostile becomes empty', () => {
+  assert.strictEqual(store.normalizeSection({ texHash: 'ab12' }).texHash, 'ab12');
+  assert.strictEqual(store.normalizeSection({ texHash: 42 }).texHash, '');
+  assert.strictEqual(store.normalizeSection({}).texHash, '');
+});
+
 test('normalizeSection: genCover only stays true for a real boolean', () => {
   assert.strictEqual(store.normalizeSection({ genCover: 'yes' }).genCover, false);
   assert.strictEqual(store.normalizeSection({ genCover: true }).genCover, true);

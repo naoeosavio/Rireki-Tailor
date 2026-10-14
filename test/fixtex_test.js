@@ -61,7 +61,8 @@ function loadAppHelpers() {
     take('getTexProblem'),
     take('extractLatexError'),
     take('describeFixFailure'),
-    'return { sanitizeFenced, sanitizeTex, getTexProblem, extractLatexError, describeFixFailure };',
+    take('texHashOf'),
+    'return { sanitizeFenced, sanitizeTex, getTexProblem, extractLatexError, describeFixFailure, texHashOf };',
   ].join('\n');
   return new Function(body)();
 }
@@ -250,6 +251,32 @@ test('describeFixFailure: truncated output keeps the retry advice', () => {
 });
 
 /* ================================================================== *
+ * texHashOf + store round-trip
+ * ================================================================== */
+
+test('texHashOf: same inputs hash equal, changed inputs differ', () => {
+  const a = { cvOut: 'CV', master: 'M', template: 'T' };
+  const b = { cvOut: 'CV', master: 'M', template: 'T' };
+  assert.strictEqual(tex.texHashOf(a), tex.texHashOf(b));
+  assert.notStrictEqual(tex.texHashOf(a), tex.texHashOf({ cvOut: 'CV', master: 'M', template: 'T2' }));
+  assert.notStrictEqual(tex.texHashOf(a), tex.texHashOf({ cvOut: 'CV2', master: 'M', template: 'T' }));
+  assert.strictEqual(typeof tex.texHashOf(a), 'string');
+});
+
+test('texHashOf: falls back to master and tolerates hostile input', () => {
+  assert.strictEqual(tex.texHashOf({ cvOut: '', master: 'M', template: 'T' }), tex.texHashOf({ master: 'M', template: 'T' }));
+  assert.strictEqual(typeof tex.texHashOf(null), 'string');
+  assert.strictEqual(typeof tex.texHashOf({}), 'string');
+});
+
+test('store: texHash survives normalization, hostile becomes empty', () => {
+  const store = require('../src/js/store.js');
+  assert.strictEqual(store.normalizeSection({ texHash: 'ab12' }).texHash, 'ab12');
+  assert.strictEqual(store.normalizeSection({ texHash: 42 }).texHash, '');
+  assert.strictEqual(store.normalizeSection({}).texHash, '');
+});
+
+/* ================================================================== *
  * Step-3 wiring tripwires (index.html + app.js source)
  * ================================================================== */
 
@@ -313,6 +340,16 @@ test('lifecycle: generate() refuses concurrent runs', () => {
 test('lifecycle: serve.js leaves extensionless cmaps alone', () => {
   const src = fs.readFileSync(path.join(ROOT, 'src', 'scripts', 'serve.js'), 'utf8');
   assert.ok(src.includes("45: ''"), 'cmap ext fix missing');
+});
+
+test('lifecycle: Convert confirms before overwriting a mismatched tex', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
+  assert.ok(src.includes('const curHash = texHashOf(s)'), 'hash snapshot missing');
+  assert.ok(src.includes("if (s.tex.trim() && s.texHash !== curHash)"), 'mismatch guard missing');
+  assert.ok(src.includes("title: 'Overwrite CV.tex?'"), 'confirm copy missing');
+  assert.ok(src.includes('s.texHash = curHash;'), 'convert stamp missing');
+  assert.ok(src.includes('s.texHash = texHashOf(s);'), 'fix stamp missing');
+  assert.ok(src.includes("copy.texHash = '';"), 'duplicate reset missing');
 });
 
 /* ================================================================== */

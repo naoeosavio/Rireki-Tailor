@@ -66,6 +66,7 @@
       cvOut: '',
       cover: '',
       tex: '',
+      texHash: '',
       chat: [],
       updatedAt: Date.now(),
     };
@@ -799,6 +800,7 @@
     copy.cvOut = '';
     copy.cover = '';
     copy.tex = '';
+    copy.texHash = '';
     copy.chat = [];
     const id = 's' + Date.now().toString(36);
     sections[id] = copy;
@@ -1076,6 +1078,18 @@
   async function toTex(s) {
     if (!(s.cvOut.trim() || s.master.trim())) { toast('No markdown content to convert.', 'warn'); return; }
     if (!s.template.trim()) { toast('The LaTeX template is empty — load one from the library.', 'warn'); return; }
+    // The tex is derived from these inputs: regenerating after a template
+    // swap, an upload, or a hand edit would silently discard the current
+    // tex, so ask first. First-time and same-inputs converts never nag.
+    const curHash = texHashOf(s);
+    if (s.tex.trim() && s.texHash !== curHash) {
+      const ok = await modal.confirm({
+        title: 'Overwrite CV.tex?',
+        message: 'The current CV.tex does not match the current template/content — it may be hand-edited, uploaded, or generated from an older template. Regenerate it from scratch?',
+        confirmText: 'Regenerate',
+      });
+      if (!ok) return;
+    }
     setStatus('Converting markdown → LaTeX (' + config.model + ')…', 'busy');
     // Validate before assigning: a truncated/markdown reply must not
     // clobber a previous working tex (same rule fixTex follows).
@@ -1087,6 +1101,7 @@
       toast('The model returned markdown instead of LaTeX — previous .tex kept.', 'err', 6000);
     } else {
       s.tex = fresh;
+      s.texHash = curHash;
       $('tex').value = s.tex;
       updateCounter('tex');
       touch(s); saveAll();
@@ -1094,6 +1109,18 @@
       toast('.tex generated in Step 3', 'ok');
     }
     goTo(3);
+  }
+
+  // Fingerprint of the inputs a .tex was generated from. toTex stamps
+  // it on success and asks before overwriting a tex that no longer
+  // matches — hand edits, uploads, or template swaps included. Pure.
+  function texHashOf(s) {
+    const src = String((s && (s.cvOut || s.master)) || '') + '\n%%template%%\n' + String((s && s.template) || '');
+    let hash = 5381;
+    for (let i = 0; i < src.length; i++) {
+      hash = (((hash << 5) + hash) + src.charCodeAt(i)) | 0;
+    }
+    return (hash >>> 0).toString(16);
   }
 
   // Classifies a failed fix reply so status/toast can name the actual
@@ -1161,6 +1188,7 @@
       return;
     } else {
       s.tex = fixed;
+      s.texHash = texHashOf(s);
       $('tex').value = s.tex;
       updateCounter('tex');
       touch(s); saveAll();

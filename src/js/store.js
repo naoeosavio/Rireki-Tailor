@@ -122,6 +122,7 @@ function normalizeSection(raw) {
     cvOut: storeText(src.cvOut),
     cover: storeText(src.cover),
     tex: storeText(src.tex),
+    texHash: storeText(src.texHash),
     chat: normalizeChat(src.chat),
     updatedAt: storeTime(src.updatedAt),
   };
