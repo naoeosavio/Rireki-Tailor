@@ -168,3 +168,35 @@ ${cvOut}
 
 Generate the complete .tex file now. Output ONLY the LaTeX source.`;
 }
+
+function buildFixTexPrompt(brokenTex, errorLog, templateTex) {
+  const tpl = (templateTex || '').trim()
+    ? `\n---\n\n## LATEX TEMPLATE (reference, preamble is authoritative)\n\n${templateTex}\n`
+    : '';
+  return `You are a LaTeX debugger. Fix the broken .tex below so it compiles with pdflatex.
+
+## Rules
+
+- **Output ONLY the complete, valid .tex source.** No commentary, no markdown wrappers, no code fences.
+- **Keep ALL preamble code exactly as-is** (\\usepackage, \\definecolor, \\newcommand, etc.) — only fix the body unless the error is in the preamble.
+- **Do NOT invent new LaTeX commands.** Use only macros/environments already defined.
+- **Escape special LaTeX characters:** &, %, $, #, _, {, } must be properly escaped in text.
+- The result must start with \\documentclass, contain \\begin{document} and end with \\end{document}.
+- Fix the reported error with the smallest change that keeps all content.
+${tpl}
+---
+
+## BROKEN .TEX
+
+${brokenTex}
+
+---
+
+## COMPILER ERROR LOG (tail)
+
+${errorLog}
+
+---
+
+Return the fixed complete .tex now. Output ONLY the LaTeX source.`;
+}

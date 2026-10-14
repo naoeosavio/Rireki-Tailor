@@ -15,6 +15,10 @@
 
   const LIB_MAX = 2;
 
+  // Tail of the compiler log sent to the fix prompt. Errors are at the
+  // end, and full logs would blow the LLM payload.
+  const FIX_LOG_TAIL = 6000;
+
   const DEFAULT_FILES = {
     role: 'data/role.md',
     masterEn: 'data/CV_MASTER_EN.md',
@@ -41,6 +45,9 @@
   let enginePromise = null;
   let pdfUrl = null;
   let pdfSectionId = null;
+  // Transient diagnostic state for the fix button. Never persisted:
+  // the last compiler error (or pre-validation refuse reason).
+  let lastCompileError = '';
 
   const $ = (id) => document.getElementById(id);
   const step = (n) => document.querySelectorAll('.panel')[n - 1];
@@ -551,6 +558,30 @@
     return body.slice(0, m.index).trim() + '\n\n\\end{document}\n';
   }
 
+  // The engine only accepts LaTeX. The LLM sometimes returns markdown
+  // despite the prompt, and sanitizeTex passes it through when no
+  // \documentclass is found. Compiling that markdown fails with the
+  // cryptic "macro parameter character #" error, so classify first
+  // with getTexProblem and refuse to compile before PdfTeX runs.
+  function getTexProblem(text) {
+    const src = String(text == null ? '' : text).trim();
+    if (!src) {
+      return 'empty';
+    } else if (src.indexOf('\\documentclass') === -1) {
+      if (/^#{1,6}\s+\S/m.test(src)) {
+        return 'markdown';
+      } else {
+        return 'no-documentclass';
+      }
+    } else if (src.indexOf('\\begin{document}') === -1) {
+      return 'no-begin-document';
+    } else if (src.search(TEX_END_RE) === -1) {
+      return 'no-end-document';
+    } else {
+      return null;
+    }
+  }
+
   function pickFile(accept) {
     return new Promise((res) => {
       const input = document.createElement('input');
@@ -1028,9 +1059,49 @@
     $('tex').value = s.tex;
     updateCounter('tex');
     touch(s); saveAll();
-    setStatus('.tex generated — review and compile in Step 3', 'ok');
-    toast('.tex generated in Step 3', 'ok');
+    const texProblem = getTexProblem(s.tex);
+    if (texProblem) {
+      setStatus('LLM returned markdown, not LaTeX (' + texProblem + ') — regenerate or paste a .tex starting with \\documentclass.', 'err');
+      log('toTex warning: output looks like ' + texProblem + ', not LaTeX.');
+      toast('The model returned markdown instead of LaTeX — regenerate or paste a valid .tex.', 'err', 6000);
+    } else {
+      setStatus('.tex generated — review and compile in Step 3', 'ok');
+      toast('.tex generated in Step 3', 'ok');
+    }
     goTo(3);
+  }
+
+  // Sends the current .tex plus the last compiler error to the LLM and
+  // writes the fixed source back. Never clears tex on failure.
+  async function fixTex(s) {
+    if (!s.tex.trim()) { toast('Nothing to fix — CV.tex is empty.', 'warn'); return; }
+    if (!lastCompileError.trim()) { toast('Compile first — there is no error log to fix from yet.', 'warn'); return; }
+    setStatus('Fixing LaTeX from the error log (' + config.model + ')…', 'busy');
+    const broken = s.tex;
+    const errTail = lastCompileError.slice(-FIX_LOG_TAIL);
+    let fixed = '';
+    try {
+      fixed = sanitizeTex(await tellChat(buildFixTexPrompt(broken, errTail, s.template), config));
+    } catch (e) {
+      setStatus('ERROR: ' + e.message, 'err');
+      log('ERROR:', e.message);
+      toast(e.code === 'NO_KEY' ? e.message + ' Open the menu (LLM).' : e.message, 'err', 6000);
+      return;
+    }
+    const texProblem = getTexProblem(fixed);
+    if (texProblem) {
+      setStatus('Fix attempt still not valid LaTeX (' + texProblem + ') — kept your previous .tex.', 'err');
+      log('fixTex warning: LLM output looks like ' + texProblem + ', previous .tex kept.');
+      toast('Fix failed — the model did not return valid LaTeX. Previous .tex kept.', 'err', 6000);
+      return;
+    } else {
+      s.tex = fixed;
+      $('tex').value = s.tex;
+      updateCounter('tex');
+      touch(s); saveAll();
+      setStatus('LaTeX fixed — review and compile again', 'ok');
+      toast('Fixed .tex applied — compile again', 'ok');
+    }
   }
 
   // ---------- Step 3 / Engine ----------
@@ -1065,6 +1136,19 @@
       toast('Compile what? CV.tex is empty.', 'warn');
       return;
     }
+    // Block markdown before it reaches PdfTeX, where it fails with the
+    // cryptic "macro parameter character #" error on lines like "# ...".
+    const texProblem = getTexProblem(s.tex);
+    if (texProblem) {
+      const firstLine = s.tex.trim().split('\n')[0].slice(0, 120);
+      lastCompileError = 'Pre-validation refuse (' + texProblem + '). First line: ' + firstLine + '\nCurrent CV.tex:\n' + s.tex.slice(0, FIX_LOG_TAIL);
+      setStatus('Step 3: CV.tex looks like ' + texProblem + ' — it must start with \\documentclass. Regenerate via "Convert to LaTeX" or use Fix with LLM.', 'err');
+      log('Refusing to compile: CV.tex problem = ' + texProblem + '. First line: ' + firstLine);
+      toast('CV.tex is not LaTeX (' + texProblem + ') — use Fix with LLM or regenerate.', 'err', 6000);
+      return;
+    } else {
+      // Valid-looking LaTeX below — proceed to the engine.
+    }
     setBusy('btn-compile', true);
     setStatus('Compiling PDF (first time ~20 min)…', 'busy');
     log('--- compile start (' + now() + ') ---');
@@ -1082,16 +1166,19 @@
       try { eng.flushCache(); } catch (_) { /* engine may not be ready */ }
       log('status:', res.status, '(' + ((performance.now() - t0) / 1000).toFixed(0) + 's)');
       if (res.status === 0) {
+        lastCompileError = '';
         showPdf(res.pdf);
         setStatus('PDF generated (' + res.pdf.length + ' bytes)', 'ok');
         toast('PDF compiled successfully', 'ok');
       } else {
-        setStatus('COMPILE ERROR (status ' + res.status + ') — see log', 'err');
+        lastCompileError = String(res.log || ('status ' + res.status));
+        setStatus('COMPILE ERROR (status ' + res.status + ') — see log, or use Fix with LLM', 'err');
         log(res.log || '');
-        toast('Compile failed — see the log below the viewer', 'err');
+        toast('Compile failed — see the log, or use Fix with LLM', 'err');
       }
     } catch (e) {
       clearInterval(timer);
+      lastCompileError = String((e && e.message) || e);
       setStatus('COMPILE ERROR: ' + e.message, 'err');
       log('ERROR:', e.message);
       toast('COMPILE ERROR: ' + e.message, 'err');
@@ -1236,6 +1323,7 @@
     $('btn-gen-cv').addEventListener('click', () => generate(genCvOut, 'btn-gen-cv', 'Generating CV_OUT.md'));
     $('btn-gen-cover').addEventListener('click', () => generate(genCover, 'btn-gen-cover', 'Generating cover.md'));
     $('btn-to-tex').addEventListener('click', () => generate(toTex, 'btn-to-tex', 'Converting to LaTeX'));
+    $('btn-fix-tex').addEventListener('click', () => generate(fixTex, 'btn-fix-tex', 'Fixing LaTeX'));
     $('btn-compile').addEventListener('click', compilePdf);
 
     document.querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', () => goTo(+b.dataset.nav)));
