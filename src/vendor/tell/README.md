@@ -1,6 +1,6 @@
 # tell-ai sdk (vendored)
 
-Native ESM vendoring of the [`@tell-ai/sdk`](https://github.com/naoeosavio/Tell-ai) (v0.2.1)
+Native ESM vendoring of the [`@tell-ai/sdk`](https://github.com/naoeosavio/Tell-ai) (v0.3.0)
 used by RirekiTailor Web for LLM generation. No bundler.
 
 | File | Purpose |
@@ -16,7 +16,7 @@ Carregado em `index.html` via import map:
 ```
 
 Expõe `window.TellSDK` (tell, create_ask_ai, extract_runs, MODELS, resolve_model_spec,
-get_system_prompt, strip_*_tags, summarize_context).
+get_system_prompt, get_model, sanitize_reasoning, strip_*_tags, summarize_context).
 
 Update: `npm update @tell-ai/sdk`, então re-copiar `dist/browser.js` para `browser.js`.
 

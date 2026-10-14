@@ -9,10 +9,11 @@
     "test": "node test/smoke.js",
     "test:e2e": "node test/e2e.js",
     "test:store": "node test/store_test.js",
+    "test:fixtex": "node test/fixtex_test.js",
     "test:serve": "node test/serve_audit.js",
     "test:serve2": "node test/serve_audit2.js",
     "test:app": "node test/app_audit.js",
-    "test:all": "npm run test:store && npm run test:serve && npm run test:serve2 && npm run test && npm run test:app && npm run test:e2e",
+    "test:all": "npm run test:store && npm run test:fixtex && npm run test:serve && npm run test:serve2 && npm run test && npm run test:app && npm run test:e2e",
     "bootstrap": "node test/bootstrap.js",
     "probe": "node test/probe.js",
     "verify": "node test/verify.js",
@@ -44,7 +45,7 @@
   },
   "homepage": "https://github.com/naoeosavio/Rireki-Tailor#readme",
   "dependencies": {
-    "@tell-ai/sdk": "0.2.2"
+    "@tell-ai/sdk": "0.3.0"
   },
   "devDependencies": {
     "playwright": "1.62.1"

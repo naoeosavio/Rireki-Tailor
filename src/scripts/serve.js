@@ -112,7 +112,7 @@ const FORMAT_EXT = {
   17: '.pool', 19: '.ocp', 20: '.ofm', 21: '.opl', 22: '.otp', 23: '.ovf',
   24: '.ovp', 25: '.esp', 26: '.tex', 28: '.pool', 29: '.dtx', 31: '.pfa',
   32: '.pfa', 33: '.vf', 35: '.ist', 36: '.ttf', 37: '.t42', 44: '.enc',
-  45: 'cmap', 47: '.otf', 48: '.cfg', 49: '.lig', 52: '.fea', 53: '.cid',
+  45: '', 47: '.otf', 48: '.cfg', 49: '.lig', 52: '.fea', 53: '.cid',
   54: '.mlbib', 55: '.mlbst', 57: '.ris', 58: '.bltxml',
 };
 

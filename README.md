@@ -37,7 +37,7 @@ the files come straight from the `src/pdftex/{formatId}/{name}` mirror.
 | `src/js/store.js` | Pure state normalizers — the shape barrier between localStorage/imported JSON and the app (anti-DoS ceilings, id allowlist, corrupt-value stashing). |
 | `src/js/prompts.js` | ATS/cover/tex prompts (identical to the CLI; ATS loads `data/PROMPT_ATS.md`). |
 | `src/js/llm.js` | LLM layer via the **tell-ai sdk** (`TellSDK.tell`): model alias/spec + keys/urls per vendor, legacy config migration, connection test, `chatTell()` (chat mode with `system`/`context`, `exec:false`). |
-| `src/vendor/tell/` | **tell-ai sdk** (v0.2.1) vendored as native ESM with no bundler: `browser.js` (copy of `dist/browser.js`, self-contained ESM build) + `sdk.js` (`export * as TellSDK from "@tell-ai/sdk"` via import map, exposes `window.TellSDK`). MIT. |
+| `src/vendor/tell/` | **tell-ai sdk** (v0.3.0) vendored as native ESM with no bundler: `browser.js` (copy of `dist/browser.js`, self-contained ESM build) + `sdk.js` (`export * as TellSDK from "@tell-ai/sdk"` via import map, exposes `window.TellSDK`). MIT. |
 | `src/css/app.css` | **Dark/light** themes (`data-theme`), design system (buttons, cards, stepper, toasts, modals, sidebar, chat), responsive, `prefers-reduced-motion`. |
 | `src/vendor/swiftlatex/` | Vendored engine. Patches: texlive endpoint → local origin; `ENGINE_PATH` via `document.currentScript`; `compileFormat` returning the fmt bytes (Uint8Array). |
 | `src/scripts/serve.js` | Dev server + kpathsea resolver (`TEX_SUBROOTS` and `TEXMF_DIRS` follow TeXLive's order), `fix_extension` (ids → extensions), `fileid` header, 301 for MISS, mirror into `src/pdftex/`, `POST /api/upload-fmt`. |

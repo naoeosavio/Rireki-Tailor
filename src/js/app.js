@@ -520,26 +520,9 @@
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  function sanitizeEol(text, delim) {
-    const first = text.indexOf(delim);
-    if (first === -1) return text;
-    const after = first + delim.length;
-    const second = text.indexOf(delim, after);
-    if (second === -1) return text;
-    return text.slice(after, second).trim();
-  }
-
   function sanitizeFenced(text) {
     const m = text.match(/```[^\n]*\n?([\s\S]*?)```/);
     return m ? m[1].trim() : text;
-  }
-
-  function sanitizeLatexBody(text) {
-    const delim = '\\end{document}';
-    const i = text.indexOf('\\documentclass');
-    const j = text.indexOf(delim);
-    if (i === -1 || j === -1) return text;
-    return text.slice(i, j + delim.length).trim();
   }
 
   const TEX_END_RE = /\\end\s*\{(?:document|end)\}/i;
@@ -568,7 +551,7 @@
     if (!src) {
       return 'empty';
     } else if (src.indexOf('\\documentclass') === -1) {
-      if (/^#{1,6}\s+\S/m.test(src)) {
+      if (/^\s*#{1,6}\s+\S/m.test(src)) {
         return 'markdown';
       } else {
         return 'no-documentclass';
@@ -579,6 +562,32 @@
       return 'no-end-document';
     } else {
       return null;
+    }
+  }
+
+  // Pulls the real cause out of a pdflatex transcript. The UI log box
+  // only keeps the tail ("Fatal error ... Transcript written"), while
+  // the actionable lines ("! ...") sit higher up, so surface them.
+  function extractLatexError(logText) {
+    const lines = String(logText == null ? '' : logText).split('\n');
+    const found = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (/^! /.test(lines[i])) {
+        let err = lines[i];
+        const next = (i + 1 < lines.length) ? lines[i + 1].trim() : '';
+        if (next && !/^l\.\d+/.test(next) && !/^! /.test(next)) {
+          err += ' ' + next;
+        } else {
+          // Location (l.N) and follow-up bang lines stay separate.
+        }
+        found.push(err);
+        if (found.length >= 3) break;
+      }
+    }
+    if (found.length) {
+      return found.join(' | ').slice(0, 300);
+    } else {
+      return '';
     }
   }
 
@@ -718,6 +727,12 @@
   function switchSection(id) {
     if (!sections[id]) return;
     activeId = id;
+    // The error log belongs to the previous section's tex. Keeping it
+    // would make Fix with LLM repair the new tex with the old error.
+    lastCompileError = '';
+    const logEl = $('log');
+    if (logEl) logEl.textContent = '—';
+    setStatus('Ready', 'ok');
     saveAll();
     renderSections();
     fillStep1();
@@ -1010,9 +1025,15 @@
   }
 
   // ---------- LLM ----------
+  // Single in-flight LLM op: concurrent runs on the same section would
+  // interleave tellChat calls and last-writer-wins the same fields.
+  let opBusy = false;
+
   async function generate(fn, btnId, busyLabel) {
     const s = active();
     if (!s) return;
+    if (opBusy) { toast('Still working — wait for the current task to finish.', 'warn'); return; }
+    opBusy = true;
     setBusy(btnId, true);
     if (busyLabel) setStatus(busyLabel + '…', 'busy');
     progress(true);
@@ -1023,6 +1044,7 @@
       log('ERROR:', e.message);
       toast(e.code === 'NO_KEY' ? e.message + ' Open the menu (LLM).' : e.message, 'err', 6000);
     } finally {
+      opBusy = false;
       setBusy(btnId, false);
       progress(false);
     }
@@ -1055,33 +1077,74 @@
     if (!(s.cvOut.trim() || s.master.trim())) { toast('No markdown content to convert.', 'warn'); return; }
     if (!s.template.trim()) { toast('The LaTeX template is empty — load one from the library.', 'warn'); return; }
     setStatus('Converting markdown → LaTeX (' + config.model + ')…', 'busy');
-    s.tex = sanitizeTex(await tellChat(buildTexPrompt(s.cvOut || s.master, s.template), config));
-    $('tex').value = s.tex;
-    updateCounter('tex');
-    touch(s); saveAll();
-    const texProblem = getTexProblem(s.tex);
+    // Validate before assigning: a truncated/markdown reply must not
+    // clobber a previous working tex (same rule fixTex follows).
+    const fresh = sanitizeTex(await tellChat(buildTexPrompt(s.cvOut || s.master, s.template), config));
+    const texProblem = getTexProblem(fresh);
     if (texProblem) {
-      setStatus('LLM returned markdown, not LaTeX (' + texProblem + ') — regenerate or paste a .tex starting with \\documentclass.', 'err');
-      log('toTex warning: output looks like ' + texProblem + ', not LaTeX.');
-      toast('The model returned markdown instead of LaTeX — regenerate or paste a valid .tex.', 'err', 6000);
+      setStatus('LLM returned markdown, not LaTeX (' + texProblem + ') — previous .tex kept. Regenerate or paste a .tex starting with \\documentclass.', 'err');
+      log('toTex warning: output looks like ' + texProblem + ', not LaTeX. Head: ' + fresh.trim().slice(0, 200));
+      toast('The model returned markdown instead of LaTeX — previous .tex kept.', 'err', 6000);
     } else {
+      s.tex = fresh;
+      $('tex').value = s.tex;
+      updateCounter('tex');
+      touch(s); saveAll();
       setStatus('.tex generated — review and compile in Step 3', 'ok');
       toast('.tex generated in Step 3', 'ok');
     }
     goTo(3);
   }
 
+  // Classifies a failed fix reply so status/toast can name the actual
+  // cause instead of blaming truncation for every case. Pure: tested.
+  function describeFixFailure(raw, texProblem) {
+    if (!String(raw == null ? '' : raw).trim()) {
+      return {
+        status: 'The model returned an empty reply — previous .tex kept. Retry, or switch to a larger model.',
+        toast: 'Empty model reply — previous .tex kept. Retry or switch model.',
+      };
+    } else if (texProblem === 'markdown' || texProblem === 'no-documentclass') {
+      return {
+        status: 'The model returned markdown, not LaTeX (' + texProblem + ') — previous .tex kept. Use "Convert to LaTeX" instead.',
+        toast: 'Model returned markdown, not LaTeX — previous .tex kept.',
+      };
+    } else {
+      return {
+        status: 'Fix attempt incomplete (' + texProblem + ') — kept your previous .tex. Try again or a larger model.',
+        toast: 'Fix reply was truncated (' + texProblem + ') — previous .tex kept. Retry or switch model.',
+      };
+    }
+  }
+
   // Sends the current .tex plus the last compiler error to the LLM and
   // writes the fixed source back. Never clears tex on failure.
   async function fixTex(s) {
     if (!s.tex.trim()) { toast('Nothing to fix — CV.tex is empty.', 'warn'); return; }
-    if (!lastCompileError.trim()) { toast('Compile first — there is no error log to fix from yet.', 'warn'); return; }
+    // No log yet (fresh section or post-success): fall back to the local
+    // diagnosis so Fix stays useful right after a bad Convert to LaTeX.
+    if (!lastCompileError.trim()) {
+      const cur = getTexProblem(s.tex);
+      if (cur) {
+        lastCompileError = 'Pre-validation (' + cur + '). No compile attempted yet.';
+      } else {
+        toast('Nothing to fix — CV.tex looks valid. Compile to get an error log.', 'ok');
+        return;
+      }
+    }
     setStatus('Fixing LaTeX from the error log (' + config.model + ')…', 'busy');
     const broken = s.tex;
     const errTail = lastCompileError.slice(-FIX_LOG_TAIL);
+    // The broken tex already carries its own preamble when it has one;
+    // sending the library template on top only bloats the prompt and
+    // pushes small models into truncated replies. Send the template
+    // only when the broken tex has no preamble to work from.
+    const refTemplate = broken.indexOf('\\documentclass') === -1 ? s.template : '';
+    let raw = '';
     let fixed = '';
     try {
-      fixed = sanitizeTex(await tellChat(buildFixTexPrompt(broken, errTail, s.template), config));
+      raw = await tellChat(buildFixTexPrompt(broken, errTail, refTemplate), config);
+      fixed = sanitizeTex(raw);
     } catch (e) {
       setStatus('ERROR: ' + e.message, 'err');
       log('ERROR:', e.message);
@@ -1090,15 +1153,20 @@
     }
     const texProblem = getTexProblem(fixed);
     if (texProblem) {
-      setStatus('Fix attempt still not valid LaTeX (' + texProblem + ') — kept your previous .tex.', 'err');
-      log('fixTex warning: LLM output looks like ' + texProblem + ', previous .tex kept.');
-      toast('Fix failed — the model did not return valid LaTeX. Previous .tex kept.', 'err', 6000);
+      const msg = describeFixFailure(raw, texProblem);
+      setStatus(msg.status, 'err');
+      log('fixTex warning: raw ' + String(raw).length + ' chars, sanitized ' + fixed.length +
+        ' chars, problem = ' + texProblem + '. Head: ' + String(raw).trim().slice(0, 200));
+      toast(msg.toast, 'err', 6000);
       return;
     } else {
       s.tex = fixed;
       $('tex').value = s.tex;
       updateCounter('tex');
       touch(s); saveAll();
+      // Consumed: reusing the pre-fix log against the new tex would
+      // send the model fixing an already-fixed file in circles.
+      lastCompileError = '';
       setStatus('LaTeX fixed — review and compile again', 'ok');
       toast('Fixed .tex applied — compile again', 'ok');
     }
@@ -1141,7 +1209,9 @@
     const texProblem = getTexProblem(s.tex);
     if (texProblem) {
       const firstLine = s.tex.trim().split('\n')[0].slice(0, 120);
-      lastCompileError = 'Pre-validation refuse (' + texProblem + '). First line: ' + firstLine + '\nCurrent CV.tex:\n' + s.tex.slice(0, FIX_LOG_TAIL);
+      // The fix prompt already receives the tex as BROKEN .TEX — storing
+      // another copy here only bloats it toward truncation.
+      lastCompileError = 'Pre-validation refuse (' + texProblem + '). First line: ' + firstLine;
       setStatus('Step 3: CV.tex looks like ' + texProblem + ' — it must start with \\documentclass. Regenerate via "Convert to LaTeX" or use Fix with LLM.', 'err');
       log('Refusing to compile: CV.tex problem = ' + texProblem + '. First line: ' + firstLine);
       toast('CV.tex is not LaTeX (' + texProblem + ') — use Fix with LLM or regenerate.', 'err', 6000);
@@ -1171,10 +1241,18 @@
         setStatus('PDF generated (' + res.pdf.length + ' bytes)', 'ok');
         toast('PDF compiled successfully', 'ok');
       } else {
-        lastCompileError = String(res.log || ('status ' + res.status));
-        setStatus('COMPILE ERROR (status ' + res.status + ') — see log, or use Fix with LLM', 'err');
+        // Cap at store time: transcripts can be megabytes and this value
+        // lives for the session; fixTex slices again defensively at send.
+        lastCompileError = String(res.log || ('status ' + res.status)).slice(-FIX_LOG_TAIL);
+        const cause = extractLatexError(res.log);
+        if (cause) {
+          setStatus('COMPILE ERROR: ' + cause + ' — or use Fix with LLM', 'err');
+          toast('Compile failed: ' + cause, 'err', 8000);
+        } else {
+          setStatus('COMPILE ERROR (status ' + res.status + ') — see log, or use Fix with LLM', 'err');
+          toast('Compile failed — see the log, or use Fix with LLM', 'err');
+        }
         log(res.log || '');
-        toast('Compile failed — see the log, or use Fix with LLM', 'err');
       }
     } catch (e) {
       clearInterval(timer);

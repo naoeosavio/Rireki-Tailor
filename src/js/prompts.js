@@ -200,3 +200,12 @@ ${errorLog}
 
 Return the fixed complete .tex now. Output ONLY the LaTeX source.`;
 }
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    buildAtsPrompt: (typeof buildAtsPrompt !== 'undefined') ? buildAtsPrompt : undefined,
+    buildCoverPrompt: (typeof buildCoverPrompt !== 'undefined') ? buildCoverPrompt : undefined,
+    buildTexPrompt: (typeof buildTexPrompt !== 'undefined') ? buildTexPrompt : undefined,
+    buildFixTexPrompt: (typeof buildFixTexPrompt !== 'undefined') ? buildFixTexPrompt : undefined,
+  };
+}
