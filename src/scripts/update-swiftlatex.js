@@ -66,6 +66,21 @@ const PATCH_ENGINE_PATH = {
     "    new URL('swiftlatexpdftex.js', document.currentScript.src).href : 'swiftlatexpdftex.js';",
 };
 
+/* Static hosts (GitHub Pages) send no fileid/pkid headers, so every 200
+ * landed on TEXCACHEROOT/null and the 200-cache served stale bytes
+ * across files/compiles (instant "Fatal format file error" online while
+ * dev worked). Fall back to a savepath unique per cache key; with the
+ * header present (dev serve.js) behavior is byte-identical. */
+const PATCH_FILEID_FALLBACK = {
+  from: 'const fileid=xhr.getResponseHeader("fileid");const savepath=TEXCACHEROOT+"/"+fileid;',
+  to: 'const fileid=xhr.getResponseHeader("fileid")||(format+"_"+reqname.replace(/[^\\w.\\-]/g,"_"));const savepath=TEXCACHEROOT+"/"+fileid;',
+};
+
+const PATCH_PKID_FALLBACK = {
+  from: 'const pkid=xhr.getResponseHeader("pkid");const savepath=TEXCACHEROOT+"/"+pkid;',
+  to: 'const pkid=xhr.getResponseHeader("pkid")||("pk_"+dpi+"_"+reqname.replace(/[^\\w.\\-]/g,"_"));const savepath=TEXCACHEROOT+"/"+pkid;',
+};
+
 const PATCH_COMPILE_FORMAT = {
   from: [
     "                                    if (result === 'ok') {",
@@ -94,6 +109,8 @@ const VERIFY = [
   { file: 'PdfTeXEngine.js', text: "new URL('swiftlatexpdftex.js', document.currentScript.src)" },
   { file: 'PdfTeXEngine.js', text: 'resolve(fview);' },
   { file: 'swiftlatexpdftex.js', text: 'new URL(self.location.href)' },
+  { file: 'swiftlatexpdftex.js', text: 'format+"_"+reqname.replace' },
+  { file: 'swiftlatexpdftex.js', text: '"pk_"+dpi+"_"+reqname.replace' },
 ];
 
 function patchOnce(content, { from, to }, label) {
@@ -109,7 +126,9 @@ function patchOnce(content, { from, to }, label) {
 
 function applyPatches(name, content) {
   if (name === 'swiftlatexpdftex.js') {
-    return patchOnce(content, PATCH_ENDPOINT, 'texlive_endpoint site-root');
+    let out = patchOnce(content, PATCH_ENDPOINT, 'texlive_endpoint site-root');
+    out = patchOnce(out, PATCH_FILEID_FALLBACK, 'fileid fallback savepath');
+    return patchOnce(out, PATCH_PKID_FALLBACK, 'pkid fallback savepath');
   }
   if (name === 'PdfTeXEngine.js') {
     let out = patchOnce(content, PATCH_ENGINE_PATH, 'ENGINE_PATH from document.currentScript');

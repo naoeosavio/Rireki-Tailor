@@ -30,6 +30,41 @@ jobs:
           cp -r src/. _site/
           touch _site/.nojekyll
 
+      # The wasm engine requests TeXLive files WITHOUT extension
+          # (pdftex/26/article, pdftex/3/cmr9); the dev server appends it
+          # (serve.js withExtension), but static hosts cannot. Replicate
+          # that rule here with hard links (extension table mirrors
+          # FORMAT_EXT in src/scripts/serve.js).
+      - name: Extensionless pdftex aliases for static hosting
+        run: |
+          python3 - <<'EOF'
+          import os
+          FORMAT_EXT = {0:'.gf',1:'.pk',3:'.tfm',4:'.afm',5:'.base',6:'.bib',7:'.bst',10:'.fmt',11:'.map',12:'.mem',13:'.mf',15:'.mft',16:'.mp',17:'.pool',19:'.ocp',20:'.ofm',21:'.opl',22:'.otp',23:'.ovf',24:'.ovp',25:'.esp',26:'.tex',28:'.pool',29:'.dtx',31:'.pfa',32:'.pfa',33:'.vf',35:'.ist',36:'.ttf',37:'.t42',44:'.enc',45:'',47:'.otf',48:'.cfg',49:'.lig',52:'.fea',53:'.cid',54:'.mlbib',55:'.mlbst',57:'.ris',58:'.bltxml'}
+          root = '_site/pdftex'
+          made = 0
+          for did in sorted(os.listdir(root)):
+              d = os.path.join(root, did)
+              if not os.path.isdir(d):
+                  continue
+              try:
+                  fid = int(did)
+              except ValueError:
+                  continue
+              files = set(os.listdir(d))
+              for base in sorted(files):
+                  if '.' not in base:
+                      continue
+                  stem = base.rsplit('.', 1)[0]
+                  if stem in files:
+                      continue
+                  ext = FORMAT_EXT.get(fid, '')
+                  want = stem + ext if ext else stem
+                  if want == base:
+                      os.link(os.path.join(d, base), os.path.join(d, stem))
+                      made += 1
+          print(f'extensionless aliases: {made}')
+          EOF
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
