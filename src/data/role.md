@@ -30,3 +30,23 @@
   - Open source contributions
   ---
 -->
+
+Vaga: Especialista de Produto / Growth Marketing
+Empresa: Soluções Digitais Brasil
+Modalidade: Híbrido (São Paulo)
+
+Descrição da Vaga:
+Buscamos um(a) Especialista de Produto e Crescimento para liderar nossas iniciativas de retenção e aquisição de clientes. Você trabalhará em conjunto com nossos times de tecnologia, design e vendas.
+
+Responsabilidades:
+- Analisar métricas de funil, conversão e retenção (CAC, LTV, Churn).
+- Conduzir testes A/B contínuos para otimizar o produto e a experiência de onboarding.
+- Estruturar campanhas de automação no CRM (HubSpot ou similar).
+- Colaborar com squads ágeis no desenvolvimento de novas ferramentas.
+
+Requisitos Necessários:
+- Experiência sólida em produto digital, growth marketing ou marketing de performance.
+- Conhecimento aprofundado em ferramentas de CRM e Analytics (Google Analytics, Mixpanel, etc.).
+- Capacidade de analisar dados e apresentar hipóteses claras para a liderança.
+- Excelente comunicação interpessoal e experiência com métodos ágeis (Scrum/Kanban).
+- Inglês avançado para alinhamento com clientes e fornecedores internacionais.
