@@ -322,6 +322,68 @@ const UPLOAD_TIMEOUT_MS = (() => {
   return Number.isFinite(v) && v > 0 ? v : 60000;
 })();
 
+/* Forward a custom LLM call so endpoints without CORS headers work from
+ * the browser. Same-origin POST only, http(s) targets only, 1 MB cap. */
+const LLM_FORWARD_MAX_BYTES = 1024 * 1024;
+
+function handleLlmForward(req, res) {
+  if (req.method !== 'POST') {
+    res.writeHead(405, { Allow: 'POST' }).end();
+    return;
+  }
+  if (!isSameOrigin(req)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Origin not allowed');
+    return;
+  }
+  let raw = '';
+  let size = 0;
+  let settled = false;
+  const reject = (code, message) => {
+    if (settled) return;
+    settled = true;
+    res.writeHead(code, { 'Content-Type': 'text/plain' }).end(message);
+  };
+  req.on('data', (chunk) => {
+    size += chunk.length;
+    if (size > LLM_FORWARD_MAX_BYTES) {
+      reject(413, 'Request too large');
+      req.destroy();
+      return;
+    }
+    raw += chunk;
+  });
+  req.on('end', async () => {
+    if (settled) return;
+    settled = true;
+    let payload = null;
+    try {
+      payload = JSON.parse(raw);
+    } catch (_) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' }).end('Bad JSON');
+      return;
+    }
+    const target = payload && typeof payload.url === 'string' ? payload.url : '';
+    const outHeaders = payload && payload.headers && typeof payload.headers === 'object' ? payload.headers : {};
+    if (!/^https?:\/\//i.test(target)) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' }).end('Bad URL');
+      return;
+    }
+    try {
+      const upstream = await fetch(target, {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, outHeaders),
+        body: typeof payload.body === 'string' ? payload.body : JSON.stringify(payload.body),
+      });
+      const text = await upstream.text();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: upstream.status, text: text }));
+    } catch (err) {
+      res.writeHead(502, { 'Content-Type': 'text/plain' }).end('Upstream failed: ' + err.message);
+    }
+  });
+  req.on('error', () => reject(500, 'Request failed'));
+}
+
 function handleFmtUpload(req, res) {
   if (req.method !== 'POST') {
     res.writeHead(405, { Allow: 'POST' }).end();
@@ -496,6 +558,11 @@ function handle(req, res) {
 
   if (url.pathname === '/api/upload-fmt') {
     handleFmtUpload(req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/llm-forward') {
+    handleLlmForward(req, res);
     return;
   }
 

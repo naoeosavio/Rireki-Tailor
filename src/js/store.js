@@ -204,7 +204,13 @@ function normalizeConfig(raw, vendors) {
   });
   if (typeof src.apiKey === 'string' && src.apiKey.trim() && !keys.openai) keys.openai = src.apiKey.trim();
   if (typeof src.baseURL === 'string' && src.baseURL.trim() && !urls.openai) urls.openai = src.baseURL.trim();
-  return { model: model, keys: keys, urls: urls };
+  const out = { model: model, keys: keys, urls: urls };
+  if (src.customApi === 'responses' || src.customApi === 'chat') out.customApi = src.customApi;
+  if (typeof src.customHeaders === 'string' && src.customHeaders) out.customHeaders = src.customHeaders;
+  /* setupDone means the user saved the setup values. The seeded defaults
+     do not set it, so a fresh profile still shows the setup block. */
+  if (src.setupDone === true) out.setupDone = true;
+  return out;
 }
 
 if (typeof module !== 'undefined' && module.exports) {

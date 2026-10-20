@@ -1,8 +1,8 @@
 # LLM providers — when a Base URL is needed
 
-Guide to the **LLM** panel (sidebar, LLM tab): a **Model** field + 13 vendor
+Guide to the **LLM** panel (setup block, top of the app): a **Model** field + 12 vendor
 rows (`openai`, `anthropic`, `google`, `deepseek`, `xai`, `cerebras`,
-`fireworks`, `moonshotai`, `openrouter`, `alibaba`, `zai`, `vast`, `local`),
+`fireworks`, `moonshotai`, `openrouter`, `alibaba`, `zai`, `custom`),
 each with a **key** and a **base url**.
 Everything lives in `localStorage["riki.config"]` (`{ model, keys, urls }`) and
 is handed to `TellSDK.tell` (`src/js/llm.js`). The **Test connection** button
@@ -37,21 +37,26 @@ fill the field in.
 | `openrouter` | **Yes** | `https://openrouter.ai/api/v1` | `z-ai/glm-5.3-flash` |
 | `alibaba` | No (has an intl default) | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` | `alibaba:qwen-max` |
 | `zai` | No (has a default) | `https://api.z.ai/api/paas/v4` | `zai:glm-5.3` (or the `z` shortcut) |
-| `vast` | **Yes** | — (your own Vast.ai server URL) | `vast:<instance-model>` |
-| `local` | No (Ollama default) | `http://localhost:11434/v1` | `local:llama3.1` |
+| `custom` | **Yes** | — (your own endpoint URL) | `custom:kimi-k3` |
 
-Routing details (SDK in `src/vendor/tell/browser.js`):
+Routing details (SDK in `src/vendor/tell/browser.js`, custom shim in `src/js/llm.js`):
 
 * A model with `/` goes to the **openrouter** vendor
   (e.g. `z-ai/glm-5.3-flash`). The explicit form also works:
   `openrouter:z-ai/glm-5.3-flash`.
-* `alibaba`, `zai`, `vast` and `local` require the colon form
+* `alibaba`, `zai` and `custom` require the colon form
   (`vendor:model[:thinking]`, e.g. `alibaba:qwen-max:high`): with a `/` the
   model would fall onto the openrouter route.
 * General form: `alias` (e.g. `j`, `z`, `a`) or `vendor:model:thinking`
   (e.g. `openai:gpt-4o-mini:high`).
-* `vast`/`local` do not use a key (the SDK sends `apiKey: "not-needed"`);
-  the key fields on those rows are optional.
+* `custom` is a generic user-supplied endpoint (any OpenAI-shaped API).
+  The app calls it directly with fetch, not through the SDK: `custom:<model>`
+  posts to `<url>/chat/completions` (or `<url>/responses` with API type
+  `responses`), sends the key as `Bearer` auth plus the extra JSON headers,
+  and reads the reply text. Keyless endpoints work: only the URL is required.
+  Example (opencode zen): URL `https://opencode.ai/zen/go/v1`, model
+  `muse-spark-1.3-contributor`, key `$OPENCODE_API_KEY`, API `chat`,
+  headers `{"x-opencode-session":"$OPENCODE_SESSION_ID"}`.
 * Internally: the SDK reads the `zai` vendor under the `zhipu` names
   (`keys.zhipu`/`urls.zhipu`); the app (`tellCfg` in `src/js/llm.js`)
   mirrors them automatically — just fill in the `zai` row.
@@ -90,7 +95,7 @@ slug with the `/`.
 
 | Error | Cause | Action |
 |---|---|---|
-| `baseURL must be a non-empty string` | Empty URL on a vendor that requires one (openrouter, vast) | Fill in the table's `Default` (vast: your own server URL) |
+| `baseURL must be a non-empty string` | Empty URL on a vendor that requires one (openrouter, custom) | Fill in the table's `Default` (custom: your own endpoint URL) |
 | HTTP 404 with a duplicated `/chat/completions` | You pasted the full URL into the field | Go back to just the base (`.../v1`) |
 | HTTP 401 | Wrong or missing vendor key | Check `cfg-key-<vendor>` for the model in use (`alibaba` uses the intl default; China region: switch to the DashScope CN URL) |
 | CORS/network failure in the browser | Provider blocks browser access | Use **Route 2** (proxy) |
