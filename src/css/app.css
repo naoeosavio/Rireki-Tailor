@@ -99,6 +99,10 @@ a:hover { text-decoration: underline; }
 .warn { color: var(--warn); }
 .meta { color: var(--muted); font-size: .78em; }
 
+/* The hidden attribute must win over component display rules
+   (.model-grid sets display:grid, which beats the UA [hidden]). */
+[hidden] { display: none !important; }
+
 /* ---------- global progress ---------- */
 .progress {
   position: fixed; inset: 0 0 auto 0; height: 3px; z-index: 200;
@@ -310,6 +314,68 @@ textarea::placeholder, input::placeholder { color: color-mix(in srgb, var(--mute
 .ta-foot { display: flex; justify-content: flex-end; min-height: 14px; }
 .counter { color: var(--muted); font-size: .74em; font-variant-numeric: tabular-nums; }
 
+/* Large editors fill the available viewport height. The floor keeps
+   short screens usable. The cards already stretch to the row height. */
+#role, #master, #pitch, #template, #cvOut, #cover, #tex {
+  flex: 1 1 0;
+  min-height: 220px;
+  min-height: max(220px, calc(100vh - 320px));
+}
+
+/* ---------- visual template model picker ---------- */
+.model-grid {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  /* Compact natural height. Never stretches with the row. Content past
+     the cap scrolls instead of pushing the page. */
+  max-height: 420px;
+  max-height: min(28lh, 55vh);
+  overflow-y: auto;
+}
+.model-card {
+  flex-direction: column; align-items: flex-start; text-align: left;
+  padding: 16px; gap: 8px; line-height: 1.4;
+  min-height: 148px;
+}
+.model-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.model-badge {
+  font-size: .72em; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--accent); border: 1px solid var(--accent);
+  border-radius: 999px; padding: 2px 10px;
+}
+.model-card.selected .model-badge {
+  background: var(--accent); color: var(--accent-fg);
+}
+.model-title { font-weight: 700; font-size: 1.2em; }
+.model-desc { color: var(--muted); font-size: .95em; line-height: 1.5; }
+/* Second line with the user library templates. Four equal columns, so
+   each chip owns a quarter. Compact height: title text only. Hidden
+   while the user has no template. */
+.user-grid {
+  display: grid; gap: 8px;
+  grid-template-columns: repeat(4, 1fr);
+}
+.user-tpl {
+  padding: 6px 12px; font-size: .9em; font-weight: 600;
+  justify-content: center; text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.user-tpl.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.tex-details summary {
+  cursor: pointer; color: var(--muted); font-size: .86em; padding: 6px 0;
+}
+.tex-details summary:hover { color: var(--fg); }
+.tex-details summary {
+  cursor: pointer; color: var(--muted); font-size: .86em; padding: 6px 0;
+}
+.tex-details summary:hover { color: var(--fg); }
+
 .check.toggle {
   display: inline-flex; gap: 8px; align-items: center;
   font-size: .9em; color: var(--muted); cursor: pointer; user-select: none;
@@ -445,15 +511,41 @@ textarea::placeholder, input::placeholder { color: color-mix(in srgb, var(--mute
 }
 .lib-entry-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
-/* ---------- LLM config (inside the menu) ---------- */
+/* ---------- setup block (config + CV base) ---------- */
+.setup {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg2); margin-bottom: 14px; box-shadow: var(--shadow-s);
+}
+.setup-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; flex-wrap: wrap;
+}
+.setup-toggle {
+  background: none; border: none; padding: 4px 6px; gap: 8px;
+  color: var(--fg); font-weight: 600; cursor: pointer;
+}
+.setup-toggle:hover { border-color: transparent; color: var(--accent); }
+.setup-caret { transition: transform var(--speed); }
+.setup-toggle[aria-expanded="false"] .setup-caret { transform: rotate(-90deg); }
+.setup-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.setup-chip {
+  font-size: .74em; color: var(--muted); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 10px; white-space: nowrap;
+}
+.setup-body {
+  padding: 0 12px 12px; display: flex; flex-direction: column; gap: 12px;
+}
+.setup.collapsed .setup-body { display: none; }
+
+/* ---------- LLM config (setup block) ---------- */
 #cfg-panel label { display: block; margin: 8px 0; font-size: .85em; color: var(--muted); }
-#cfg-panel input {
+#cfg-panel input, #cfg-panel select, #cfg-panel textarea {
   width: 100%; margin-top: 4px; padding: 8px 10px;
 }
-#cfg-panel .vendors { margin: 12px 0; display: flex; flex-direction: column; gap: 6px; }
-#cfg-panel .vendor-row { display: grid; grid-template-columns: 96px 1fr 1fr; gap: 8px; align-items: center; }
-#cfg-panel .vendor-row span { color: var(--muted); font-size: .82em; font-family: var(--mono); }
+#cfg-panel textarea { min-height: 0; font-size: .85em; }
 #cfg-panel .hint { margin-top: 10px; }
+.key-wrap { display: flex; gap: 6px; align-items: center; }
+.key-wrap input { flex: 1; min-width: 0; }
 
 /* ---------- chat ---------- */
 .chat-card { min-height: 560px; }

@@ -17,6 +17,8 @@
   <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></symbol>
   <symbol id="i-dup" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
@@ -83,28 +85,142 @@
   <div class="meta" id="last-saved"></div>
 </header>
 
-<nav class="steps" aria-label="Flow steps">
-  <button class="step-dot active" data-nav="1" aria-current="step">
-    <span class="step-num">1</span><span class="step-label">Inputs</span>
-  </button>
-  <span class="step-line" aria-hidden="true"></span>
-  <button class="step-dot" data-nav="2">
-    <span class="step-num">2</span><span class="step-label">Markdown</span>
-  </button>
-  <span class="step-line" aria-hidden="true"></span>
-  <button class="step-dot" data-nav="3">
-    <span class="step-num">3</span><span class="step-label">LaTeX → PDF</span>
-  </button>
-</nav>
-
 <main>
 
-  <!-- ============ STEP 1 ============ -->
-  <section class="panel" id="panel1">
-    <p id="step1-empty" style="display:none" class="warn empty-state">
-      No sections yet. Click <b>+ New section</b> to get started (it inherits the library's master CV + template).
-    </p>
+  <!-- ============ SETUP BLOCK — config + CV base ============ -->
+  <section class="setup" id="setup-block">
+    <div class="setup-bar">
+      <button type="button" id="btn-setup-toggle" class="setup-toggle" aria-expanded="true" aria-controls="setup-body">
+        <svg class="ic"><use href="#i-sliders"/></svg>
+        <span id="setup-summary">Configuração: modelo e CV base</span>
+        <svg class="ic setup-caret"><use href="#i-chevron"/></svg>
+      </button>
+      <span class="spacer"></span>
+      <span class="setup-chips" id="setup-chips"></span>
+    </div>
+    <div class="setup-body" id="setup-body">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head">
+            <h2>Provedor</h2>
+          </div>
+          <p class="hint">Selecione o provedor de IA:</p>
+          <div class="model-grid" id="vendor-grid" role="group" aria-label="LLM vendors"></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h2 id="vendor-title">Detalhes</h2>
+            <span class="actions">
+              <button id="btn-cfg-test" type="button"><svg class="ic"><use href="#i-check"/></svg> Testar Conexão</button>
+            </span>
+          </div>
+          <p class="hint" id="vendor-pick-hint">Selecione um provedor ao lado para configurar modelo e chave.</p>
+          <form id="cfg-panel" onsubmit="return false" hidden>
+            <label>Modelo selecionado:
+              <input id="cfg-model" placeholder="ex: gemini-2.5-flash">
+            </label>
+            <label>Chave de API do provedor (API Key):
+              <span class="key-wrap">
+                <input id="cfg-key" type="password" placeholder="Cole sua chave aqui (ex: AIzaSy... ou sk-...)">
+                <button type="button" id="btn-key-eye" class="icon-btn" title="Show key" aria-label="Show key"><svg class="ic"><use href="#i-eye"/></svg></button>
+              </span>
+            </label>
+            <div id="cfg-custom-extra" hidden>
+              <label>URL do endpoint:
+                <input id="cfg-url" placeholder="https://seu-endpoint/v1">
+              </label>
+              <label>API:
+                <select id="cfg-api"><option value="chat">chat</option><option value="responses">responses</option></select>
+              </label>
+              <label>Headers (JSON):
+                <textarea id="cfg-headers" rows="2" spellcheck="false" placeholder='{"x-tenant":"acme"}'></textarea>
+              </label>
+            </div>
+            <p class="hint">Aliases: g, j, s, d, x, z, K, c… Full spec: <code>vendor:model:thinking</code>. Keys live in your browser's localStorage.</p>
+          </form>
+        </div>
+      </div>
 
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head">
+            <h2>Master CV</h2>
+            <span class="actions">
+              <select id="lang" data-bind="lang" aria-label="CV language"><option value="en">EN</option><option value="pt">PT</option></select>
+              <select id="master-lib" class="lib-select" aria-label="Copy master from library"></select>
+              <button class="icon-btn" data-save-model="master" title="Save this master to the library (as a model)" aria-label="Save master as model"><svg class="ic"><use href="#i-bookmark"/></svg></button>
+              <button class="icon-btn" data-upload="master" title="Upload file" aria-label="Upload master from file"><svg class="ic"><use href="#i-upload"/></svg></button>
+              <button class="icon-btn" data-default="master" title="Restore data/CV_MASTER_*.md" aria-label="Restore default master"><svg class="ic"><use href="#i-reset"/></svg></button>
+            </span>
+          </div>
+          <textarea id="master" data-bind="master" rows="10" placeholder="Master CV (markdown)…"></textarea>
+          <div class="ta-foot"><span class="counter" data-count-for="master"></span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Modelo visual (LaTeX) do PDF</h2>
+            <span class="actions">
+              <select id="template-lib" class="lib-select" aria-label="Copy template from library"></select>
+              <button class="icon-btn" data-save-model="template" title="Save this template to the library (as a model)" aria-label="Save template as model"><svg class="ic"><use href="#i-bookmark"/></svg></button>
+              <button class="icon-btn" data-upload="template" title="Upload file" aria-label="Upload template from file"><svg class="ic"><use href="#i-upload"/></svg></button>
+              <button class="icon-btn" data-default="template" title="Restore data/CV_ATS.tex" aria-label="Restore default template"><svg class="ic"><use href="#i-reset"/></svg></button>
+            </span>
+          </div>
+          <p class="hint" id="model-hint">Selecione o estilo visual que mais combina com seu perfil profissional:</p>
+          <div class="model-grid" role="group" aria-label="Visual template models">
+            <button type="button" class="model-card" data-model="modern" aria-pressed="false">
+              <span class="model-badge">Moderno</span>
+              <span class="model-title">Tech &amp; Inovação</span>
+              <span class="model-desc">Visual limpo, toques azuis sutis, sem serifa.</span>
+            </button>
+            <button type="button" class="model-card" data-model="classic" aria-pressed="false">
+              <span class="model-badge">Clássico</span>
+              <span class="model-title">Executivo Sênior</span>
+              <span class="model-desc">Tipografia elegante, linhas sóbrias, ideal para finanças/direito.</span>
+            </button>
+            <button type="button" class="model-card" data-model="ats" aria-pressed="false">
+              <span class="model-badge">100% ATS</span>
+              <span class="model-title">ATS Minimalista</span>
+              <span class="model-desc">Estrutura em coluna única para leitura perfeita por robôs.</span>
+            </button>
+            <button type="button" class="model-card" data-model="academic" aria-pressed="false">
+              <span class="model-badge">Acadêmico</span>
+              <span class="model-title">Projetos &amp; Pesquisa</span>
+              <span class="model-desc">Estruturado para publicações, certificações e ensino.</span>
+            </button>
+          </div>
+          <details class="tex-details" hidden>
+            <summary>Ver / Editar o código LaTeX do template (Opcional para personalização avançada)</summary>
+            <textarea id="template" data-bind="template" rows="10" spellcheck="false" placeholder="template/CV_ATS.tex…"></textarea>
+            <div class="ta-foot"><span class="counter" data-count-for="template"></span></div>
+          </details>
+          <div class="user-grid" id="user-models" role="group" aria-label="Your templates" hidden></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p id="step1-empty" style="display:none" class="warn empty-state">
+    No sections yet. Click <b>+ New section</b> to get started (it inherits the library's master CV + template).
+  </p>
+
+  <nav class="steps" aria-label="Flow steps">
+    <button class="step-dot active" data-nav="1" aria-current="step">
+      <span class="step-num">1</span><span class="step-label">Vaga</span>
+    </button>
+    <span class="step-line" aria-hidden="true"></span>
+    <button class="step-dot" data-nav="2">
+      <span class="step-num">2</span><span class="step-label">Markdown</span>
+    </button>
+    <span class="step-line" aria-hidden="true"></span>
+    <button class="step-dot" data-nav="3">
+      <span class="step-num">3</span><span class="step-label">LaTeX → PDF</span>
+    </button>
+  </nav>
+
+  <!-- ============ STEP 1 — Vaga ============ -->
+  <section class="panel" id="panel1">
     <div class="grid-2">
       <div class="card">
         <div class="card-head">
@@ -120,35 +236,6 @@
 
       <div class="card">
         <div class="card-head">
-          <h2>Master CV</h2>
-          <span class="actions">
-            <select id="lang" data-bind="lang" aria-label="CV language"><option value="en">EN</option><option value="pt">PT</option></select>
-            <select id="master-lib" class="lib-select" aria-label="Copy master from library"></select>
-            <button class="icon-btn" data-save-model="master" title="Save this master to the library (as a model)" aria-label="Save master as model"><svg class="ic"><use href="#i-bookmark"/></svg></button>
-            <button class="icon-btn" data-upload="master" title="Upload file" aria-label="Upload master from file"><svg class="ic"><use href="#i-upload"/></svg></button>
-            <button class="icon-btn" data-default="master" title="Restore data/CV_MASTER_*.md" aria-label="Restore default master"><svg class="ic"><use href="#i-reset"/></svg></button>
-          </span>
-        </div>
-        <textarea id="master" data-bind="master" rows="10" placeholder="Master CV (markdown)…"></textarea>
-        <div class="ta-foot"><span class="counter" data-count-for="master"></span></div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <h2>Template LaTeX</h2>
-          <span class="actions">
-            <select id="template-lib" class="lib-select" aria-label="Copy template from library"></select>
-            <button class="icon-btn" data-save-model="template" title="Save this template to the library (as a model)" aria-label="Save template as model"><svg class="ic"><use href="#i-bookmark"/></svg></button>
-            <button class="icon-btn" data-upload="template" title="Upload file" aria-label="Upload template from file"><svg class="ic"><use href="#i-upload"/></svg></button>
-            <button class="icon-btn" data-default="template" title="Restore data/CV_ATS.tex" aria-label="Restore default template"><svg class="ic"><use href="#i-reset"/></svg></button>
-          </span>
-        </div>
-        <textarea id="template" data-bind="template" rows="10" spellcheck="false" placeholder="template/CV_ATS.tex…"></textarea>
-        <div class="ta-foot"><span class="counter" data-count-for="template"></span></div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
           <h2>Pitch (optional)</h2>
           <span class="actions">
             <button class="icon-btn" data-upload="pitch" title="Upload file" aria-label="Upload pitch from file"><svg class="ic"><use href="#i-upload"/></svg></button>
@@ -157,11 +244,6 @@
         </div>
         <textarea id="pitch" data-bind="pitch" rows="7" placeholder="Personal instructions/highlights for the cover letter…"></textarea>
         <div class="ta-foot"><span class="counter" data-count-for="pitch"></span></div>
-        <label class="check toggle">
-          <input type="checkbox" id="genCover" data-bind="genCover">
-          <span class="toggle-track" aria-hidden="true"></span>
-          also generate cover.md
-        </label>
       </div>
     </div>
 
@@ -169,11 +251,11 @@
       <button id="btn-gen-cv" class="primary big"><svg class="ic"><use href="#i-file"/></svg> Gerar CV_OUT.md</button>
       <button id="btn-gen-cover" class="big"><svg class="ic"><use href="#i-file"/></svg> Gerar cover.md</button>
       <span class="spacer"></span>
-      <button data-nav="2" class="ghost">Next <svg class="ic"><use href="#i-send"/></svg></button>
+      <button data-nav="2" class="ghost">Next →</button>
     </div>
   </section>
 
-  <!-- ============ STEP 2 ============ -->
+  <!-- ============ STEP 2 — Markdown ============ -->
   <section class="panel" id="panel2" style="display:none">
     <div class="grid-2">
       <div class="card">
@@ -207,10 +289,13 @@
     </div>
   </section>
 
-  <!-- ============ STEP 3 ============ -->
+  <!-- ============ STEP 3 — LaTeX to PDF ============ -->
   <section class="panel" id="panel3" style="display:none">
-    <div class="grid-3">
-      <div class="card">
+    <div class="actions-row tight">
+      <button id="btn-tex-toggle" class="ghost" aria-expanded="true"><svg class="ic"><use href="#i-file"/></svg> Ver / Editar o código LaTeX (avançada)</button>
+    </div>
+    <div class="grid-3" id="step3-grid">
+      <div class="card" id="tex-card">
         <div class="card-head">
           <h2>CV.tex</h2>
           <span class="actions">
@@ -294,35 +379,24 @@
           <h3>LaTeX Templates <span class="badge" id="lib-template-count">0/2</span></h3>
           <button id="btn-add-template" class="sm"><svg class="ic"><use href="#i-plus"/></svg> Add</button>
         </div>
-        <p class="hint">Up to 2 global .tex templates, reusable across jobs.</p>
+        <p class="hint">Up to 4 global .tex templates, reusable across jobs.</p>
         <div id="lib-templates" class="lib-list"></div>
         <button id="btn-save-template-model" class="ghost sm wide"><svg class="ic"><use href="#i-bookmark"/></svg> Save the section's current template as a model</button>
       </div>
+
+      <div class="lib-group">
+        <div class="lib-head">
+          <h3>Template models <span class="badge" id="lib-models-count">0</span></h3>
+        </div>
+        <p class="hint">Read-only starting points. Select one to copy it into the section. The copy stays editable.</p>
+        <div id="lib-models" class="lib-list"></div>
+      </div>
     </section>
 
-    <!-- ===== LLM (config moved inside the menu; IDs preserved) ===== -->
+    <!-- ===== LLM (the form lives in Step 1; this tab links there) ===== -->
     <section class="sidebar-pane" data-pane="llm" hidden>
-      <form id="cfg-panel" onsubmit="return false">
-        <label>Model <input id="cfg-model" placeholder="j (alias) or vendor:model:thinking"></label>
-        <p class="hint">Aliases: g (openai gpt-5.6-sol), j (google gemini-3.5-flash-lite), s (anthropic claude-sonnet-5), d (deepseek deepseek-v4-flash), x (xai grok-4.5), z (fireworks glm), K (moonshot kimi), c (openai luna)… Full spec: <code>vendor:model:thinking</code>.</p>
-        <div class="vendors">
-          <div class="vendor-row"><span>openai</span><input id="cfg-key-openai" type="password" placeholder="key"><input id="cfg-url-openai" placeholder="base url (CORS proxy)"></div>
-          <div class="vendor-row"><span>anthropic</span><input id="cfg-key-anthropic" type="password" placeholder="key"><input id="cfg-url-anthropic" placeholder="base url (CORS proxy)"></div>
-          <div class="vendor-row"><span>google</span><input id="cfg-key-google" type="password" placeholder="key"><input id="cfg-url-google" placeholder="base url (CORS proxy)"></div>
-          <div class="vendor-row"><span>deepseek</span><input id="cfg-key-deepseek" type="password" placeholder="key"><input id="cfg-url-deepseek" placeholder="base url (CORS proxy)"></div>
-          <div class="vendor-row"><span>xai</span><input id="cfg-key-xai" type="password" placeholder="key"><input id="cfg-url-xai" placeholder="base url (CORS proxy)"></div>
-          <div class="vendor-row"><span>cerebras</span><input id="cfg-key-cerebras" type="password" placeholder="key"><input id="cfg-url-cerebras" placeholder="base url (CORS proxy)"></div>
-          <div class="vendor-row"><span>fireworks</span><input id="cfg-key-fireworks" type="password" placeholder="key"><input id="cfg-url-fireworks" placeholder="base url (CORS proxy)"></div>
-          <div class="vendor-row"><span>moonshotai</span><input id="cfg-key-moonshotai" type="password" placeholder="key"><input id="cfg-url-moonshotai" placeholder="base url (CORS proxy)"></div>
-          <div class="vendor-row"><span>openrouter</span><input id="cfg-key-openrouter" type="password" placeholder="key"><input id="cfg-url-openrouter" placeholder="base url (CORS proxy)"></div>
-          <div class="vendor-row"><span>alibaba</span><input id="cfg-key-alibaba" type="password" placeholder="key"><input id="cfg-url-alibaba" placeholder="base url (required)"></div>
-          <div class="vendor-row"><span>zai</span><input id="cfg-key-zai" type="password" placeholder="key"><input id="cfg-url-zai" placeholder="base url (CORS proxy)"></div>
-          <div class="vendor-row"><span>vast</span><input id="cfg-key-vast" type="password" placeholder="key (optional)"><input id="cfg-url-vast" placeholder="your own server base url (required)"></div>
-          <div class="vendor-row"><span>local</span><input id="cfg-key-local" type="password" placeholder="key (optional)"><input id="cfg-url-local" placeholder="base url (CORS proxy)"></div>
-        </div>
-        <button id="btn-cfg-test" type="button"><svg class="ic"><use href="#i-check"/></svg> Test connection</button>
-        <p class="hint">Keys and URLs live in your browser's localStorage (the key is for the vendor the model uses; the URLs are for a CORS proxy if the provider does not allow browser access).</p>
-      </form>
+      <p class="hint">LLM settings live in Step 1 (Config).</p>
+      <button id="btn-goto-config" class="ghost sm wide"><svg class="ic"><use href="#i-sliders"/></svg> Open Config step</button>
     </section>
   </div>
 </aside>
@@ -337,6 +411,7 @@
 <script src="js/prompts.js"></script>
 <script src="js/llm.js"></script>
 <script src="js/store.js"></script>
+<script src="js/defaults.js"></script>
 <script src="js/chat.js"></script>
 <script src="js/app.js"></script>
 </body>

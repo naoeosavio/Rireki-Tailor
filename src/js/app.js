@@ -13,7 +13,19 @@
   const LS_LIBRARY = 'riki.library';
   const LS_THEME = 'riki.theme';
 
-  const LIB_MAX = 2;
+  // Library ceilings per kind: masters stay at 2 (the masters badge and
+  // the audit assert a "/2" range), templates hold the 4 built-in visual
+  // models (modern, classic, ats, academic).
+  const LIB_MAX_MASTERS = 2;
+  const LIB_MAX_TEMPLATES = 4;
+
+  function libMax(kind) {
+    if (kind === 'master') {
+      return LIB_MAX_MASTERS;
+    } else {
+      return LIB_MAX_TEMPLATES;
+    }
+  }
 
   // Tail of the compiler log sent to the fix prompt. Errors are at the
   // end, and full logs would blow the LLM payload.
@@ -378,28 +390,80 @@
     libSaveTimer = setTimeout(saveAll, 400);
   }
 
-  async function ensureLibrarySeed() {
-    if (library.masters.length || library.templates.length) return;
-    try {
-      const [en, tpl] = await Promise.all([
-        fetchText(DEFAULT_FILES.masterEn),
-        fetchText(DEFAULT_FILES.template),
-      ]);
-      library.masters.push({
-        id: 'm' + Date.now().toString(36),
-        name: 'Master EN (default)',
-        lang: 'en',
-        content: en,
-      });
-      library.templates.push({
-        id: 't' + Date.now().toString(36),
-        name: 'CV_ATS (default)',
-        content: tpl,
-      });
-      saveAll();
-    } catch (e) {
-      console.warn('library seed failed', e);
+  // Non-empty text, or '' when the value is missing/blank. Used to
+  // prefer data/* files while falling back to the embedded defaults in
+  // defaults.js (fresh clone, static hosting without the file, emptied file).
+  function nonEmpty(text) {
+    const s = typeof text === 'string' ? text : '';
+    if (s.trim()) {
+      return s;
+    } else {
+      return '';
     }
+  }
+
+  // The fallback returns the version that matches the section language.
+  // English is the default language. Portuguese needs explicit 'pt'.
+  function embeddedMaster(lang) {
+    if (lang === 'pt') {
+      if (typeof DEFAULT_MASTER_CV !== 'undefined' && DEFAULT_MASTER_CV.trim()) {
+        return DEFAULT_MASTER_CV;
+      } else {
+        return '';
+      }
+    } else if (typeof DEFAULT_MASTER_CV_EN !== 'undefined' && DEFAULT_MASTER_CV_EN.trim()) {
+      return DEFAULT_MASTER_CV_EN;
+    } else if (typeof DEFAULT_MASTER_CV !== 'undefined' && DEFAULT_MASTER_CV.trim()) {
+      return DEFAULT_MASTER_CV;
+    } else {
+      return '';
+    }
+  }
+
+  function embeddedTemplate(key) {
+    if (typeof DEFAULT_TEMPLATES !== 'undefined' && DEFAULT_TEMPLATES[key]) {
+      return DEFAULT_TEMPLATES[key];
+    } else if (typeof DEFAULT_TEMPLATES !== 'undefined' && DEFAULT_TEMPLATES.ats) {
+      return DEFAULT_TEMPLATES.ats;
+    } else {
+      return '';
+    }
+  }
+
+  function embeddedRole() {
+    if (typeof DEFAULT_ROLE !== 'undefined' && DEFAULT_ROLE.trim()) {
+      return DEFAULT_ROLE;
+    } else {
+      return '';
+    }
+  }
+
+  async function fetchOptional(url) {
+    try {
+      return await fetchText(url);
+    } catch (e) {
+      console.warn('defaults fetch failed', url, e);
+      return '';
+    }
+  }
+
+  // The library holds user content only. The 4 visual templates are
+  // read-only models in defaults.js. The seed never copies them.
+  async function ensureLibrarySeed() {
+    if (library.masters.length) return;
+    const fetchedMaster = nonEmpty(await fetchOptional(DEFAULT_FILES.masterEn));
+    const masterContent = fetchedMaster || embeddedMaster('en');
+    if (!masterContent) {
+      console.warn('library seed failed: no data/* content and no embedded master');
+      return;
+    }
+    library.masters.push({
+      id: 'm' + Date.now().toString(36),
+      name: 'Master (default)',
+      lang: 'en',
+      content: masterContent,
+    });
+    saveAll();
   }
 
   function renderLibrary() {
@@ -409,11 +473,50 @@
         const arr = libArr(kind);
         const list = $(listId);
         const badge = $(countId);
-        badge.textContent = arr.length + '/' + LIB_MAX;
-        $(addId).disabled = arr.length >= LIB_MAX;
+        badge.textContent = arr.length + '/' + libMax(kind);
+        $(addId).disabled = arr.length >= libMax(kind);
         list.innerHTML = '';
         arr.forEach((entry) => list.appendChild(libEntryEl(kind, entry)));
       });
+    renderBuiltinModels();
+    renderUserModels();
+    renderModelCards();
+  }
+
+  function mkIconBtn(icon, title, cls) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = cls || 'icon-btn';
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    b.innerHTML = '<svg class="ic"><use href="#i-' + icon + '"/></svg>';
+    return b;
+  }
+
+  // Read-only model entries. Each entry has a name and a Use button.
+  // No editor exists, so the user cannot change a model.
+  function renderBuiltinModels() {
+    const list = $('lib-models');
+    if (!list) return;
+    const badge = $('lib-models-count');
+    const models = builtinModels();
+    if (badge) badge.textContent = String(models.length);
+    list.innerHTML = '';
+    models.forEach((m) => {
+      const art = document.createElement('article');
+      art.className = 'lib-entry';
+      const head = document.createElement('div');
+      head.className = 'lib-entry-head';
+      const name = document.createElement('span');
+      name.className = 'lib-name lib-name-ro';
+      name.textContent = m.name;
+      head.appendChild(name);
+      const useBtn = mkIconBtn('check', 'Use in this section');
+      useBtn.addEventListener('click', () => applyBuiltinModel(m.key));
+      head.appendChild(useBtn);
+      art.appendChild(head);
+      list.appendChild(art);
+    });
   }
 
   function libEntryEl(kind, entry) {
@@ -444,18 +547,9 @@
 
     const acts = document.createElement('span');
     acts.className = 'actions';
-    const mkIcon = (icon, title, cls) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = cls || 'icon-btn';
-      b.title = title;
-      b.setAttribute('aria-label', title);
-      b.innerHTML = '<svg class="ic"><use href="#i-' + icon + '"/></svg>';
-      return b;
-    };
-    const useBtn = mkIcon('check', 'Use in this section');
+    const useBtn = mkIconBtn('check', 'Use in this section');
     useBtn.addEventListener('click', () => applyLibToSection(kind, entry.id));
-    const upBtn = mkIcon('upload', 'Upload file');
+    const upBtn = mkIconBtn('upload', 'Upload file');
     upBtn.addEventListener('click', () => pickFile('.md,.tex,.txt').then(async (f) => {
       if (!f) return;
       if (isFileTooBig(f.size)) {
@@ -467,7 +561,7 @@
       renderLibrary();
       toast('File loaded into "' + (entry.name || 'unnamed') + '" — click Save to make sure it sticks.', 'ok');
     }));
-    const delBtn = mkIcon('trash', 'Delete', 'icon-btn danger-ghost');
+    const delBtn = mkIconBtn('trash', 'Delete', 'icon-btn danger-ghost');
     delBtn.addEventListener('click', async () => {
       const ok = await modal.confirm({
         title: 'Delete from library?',
@@ -611,8 +705,8 @@
       return;
     }
     const arr = libArr(kind);
-    if (arr.length >= LIB_MAX) {
-      toast('Library limit of ' + LIB_MAX + ' reached — delete an item to save another.', 'err');
+    if (arr.length >= libMax(kind)) {
+      toast('Library limit of ' + libMax(kind) + ' reached — delete an item to save another.', 'err');
       return;
     }
     const defName = kind === 'master'
@@ -653,6 +747,33 @@
     toast('Copied from library: "' + entry.name + '" (freely editable in this section)', 'ok');
   }
 
+  // Read-only visual models from defaults.js. The app copies a model
+  // into the active section. The app never writes to the model itself.
+  function builtinModels() {
+    const meta = (typeof DEFAULT_TEMPLATE_META !== 'undefined')
+      ? DEFAULT_TEMPLATE_META
+      : [];
+    if (typeof DEFAULT_TEMPLATES === 'undefined') {
+      return [];
+    } else {
+      return meta.filter((m) => Boolean(DEFAULT_TEMPLATES[m.key]));
+    }
+  }
+
+  function applyBuiltinModel(key) {
+    const s = active();
+    if (!s) return;
+    if (typeof DEFAULT_TEMPLATES === 'undefined' || !DEFAULT_TEMPLATES[key]) return;
+    s.template = DEFAULT_TEMPLATES[key];
+    s.templateId = null;
+    markSetupDone();
+    touch(s);
+    saveAll();
+    fillStep1();
+    const meta = builtinModels().find((m) => m.key === key);
+    toast('Model "' + (meta ? meta.name : key) + '" applied (editable in this section)', 'ok');
+  }
+
   function renderLibSelects() {
     const s = active();
     [['master-lib', 'master'], ['template-lib', 'template']].forEach(([selId, kind]) => {
@@ -670,6 +791,14 @@
         o.textContent = e.name + (kind === 'master' && e.lang ? ' (' + e.lang.toUpperCase() + ')' : '');
         sel.appendChild(o);
       });
+      if (kind === 'template') {
+        builtinModels().forEach((m) => {
+          const o = document.createElement('option');
+          o.value = '__model:' + m.key;
+          o.textContent = 'Model: ' + m.name;
+          sel.appendChild(o);
+        });
+      }
       const mg = document.createElement('option');
       mg.value = '__manage__';
       mg.textContent = 'Manage library…';
@@ -737,6 +866,7 @@
     saveAll();
     renderSections();
     fillStep1();
+    applySetupAutoState();
   }
 
   async function createSection() {
@@ -758,12 +888,8 @@
       def.templateId = src.templateId || null;
       def.pitch = src.pitch;
     } else {
-      try {
-        def.master = await fetchText(DEFAULT_FILES.masterEn);
-        def.template = await fetchText(DEFAULT_FILES.template);
-      } catch (e) {
-        console.warn('defaults fetch failed', e);
-      }
+      def.master = nonEmpty(await fetchOptional(DEFAULT_FILES.masterEn)) || embeddedMaster(def.lang);
+      def.template = nonEmpty(await fetchOptional(DEFAULT_FILES.template)) || embeddedTemplate('ats');
     }
     const id = 's' + Date.now().toString(36);
     sections[id] = def;
@@ -772,6 +898,7 @@
     renderSections();
     renderLibSelects();
     fillStep1();
+    applySetupAutoState();
     goTo(1);
     toast('Section "' + def.name + '" created', 'ok');
   }
@@ -835,6 +962,7 @@
   function exportSections() {
     /* Sanitized config: model/urls are useful for restoring; keys never leave here */
     const safeConfig = { model: config.model, urls: Object.assign({}, config.urls) };
+    if (config.customApi) safeConfig.customApi = config.customApi;
     const payload = { exportedAt: now(), config: safeConfig, library, sections };
     download('riki-secoes-' + Date.now() + '.json', JSON.stringify(payload, null, 2), 'application/json');
     toast('JSON backup downloaded — without the API keys (for safety)', 'ok');
@@ -861,10 +989,10 @@
       if (data.config) Object.assign(config, normalizeConfig(data.config, LLM_VENDORS));
       if (data.library && typeof data.library === 'object' && !Array.isArray(data.library)) {
         [['masters', 'master'], ['templates', 'template']].forEach(([listKey, kind]) => {
-          const merged = mergeLibraryList(library[listKey], data.library[listKey], kind, LIB_MAX);
+          const merged = mergeLibraryList(library[listKey], data.library[listKey], kind, libMax(kind));
           library[listKey] = merged.merged;
           if (merged.skipped) {
-            toast('Library: ' + merged.skipped + ' item(s) skipped — limit of ' + LIB_MAX + ' or duplicate id.', 'warn', 6000);
+            toast('Library: ' + merged.skipped + ' item(s) skipped — limit of ' + libMax(kind) + ' or duplicate id.', 'warn', 6000);
           }
         });
       }
@@ -888,14 +1016,15 @@
         const s = active();
         if (!s) return;
         const key = el.dataset.bind;
-        if (key === 'genCover') s.genCover = el.checked;
-        else if (key === 'lang') { s.lang = el.value; saveAll(); return; }
+        if (key === 'lang') { s.lang = el.value; saveAll(); return; }
         else {
           s[key] = el.value;
           if ((key === 'master' && s.masterId) || (key === 'template' && s.templateId)) {
             s[key === 'master' ? 'masterId' : 'templateId'] = null;
             renderLibSelects();
           }
+          if (key === 'template') renderModelCards();
+          if (key === 'master' || key === 'template') markSetupDone();
         }
         touch(s);
         saveAllDebounced();
@@ -945,7 +1074,17 @@
           template: DEFAULT_FILES.template,
           pitch: DEFAULT_FILES.pitch,
         };
-        s[key] = await fetchText(map[key]);
+        let txt = nonEmpty(await fetchOptional(map[key]));
+        if (!txt) {
+          if (key === 'role') txt = embeddedRole();
+          else if (key === 'master') txt = embeddedMaster(s.lang);
+          else if (key === 'template') txt = embeddedTemplate('ats');
+        }
+        if (!txt) {
+          toast('No default available for this field.', 'warn');
+          return;
+        }
+        s[key] = txt;
         touch(s);
         saveAll();
         fillStep1();
@@ -971,13 +1110,18 @@
 
   function onLibSelect(sel, kind) {
     const v = sel.value;
-    if (v === '') return;
-    if (v === '__manage__') {
+    if (v === '') {
+      return;
+    } else if (v === '__manage__') {
       openSidebar('lib');
       renderLibSelects();
       return;
+    } else if (v.indexOf('__model:') === 0) {
+      applyBuiltinModel(v.slice('__model:'.length));
+      return;
+    } else {
+      applyLibToSection(kind, v);
     }
-    applyLibToSection(kind, v);
   }
 
   function hidePdf() {
@@ -993,7 +1137,76 @@
   function clearStep1Fields() {
     TEXT_FIELDS.forEach((k) => { $(k).value = ''; });
     $('lang').value = 'en';
-    $('genCover').checked = false;
+  }
+
+  // The selected card always matches section.template. A hand edit
+  // matches no model, so no card stays selected (customized state).
+  function currentModelKey() {
+    const s = active();
+    if (!s || !s.template || typeof DEFAULT_TEMPLATES === 'undefined') {
+      return null;
+    } else {
+      const keys = Object.keys(DEFAULT_TEMPLATES);
+      for (let i = 0; i < keys.length; i++) {
+        if (s.template === DEFAULT_TEMPLATES[keys[i]]) return keys[i];
+      }
+      return null;
+    }
+  }
+
+  // Second line with the user library templates. Visible while the
+  // user has at least one template. A click copies it into the section.
+  function renderUserModels() {
+    const list = $('user-models');
+    if (!list) return;
+    const arr = libArr('template');
+    list.innerHTML = '';
+    list.hidden = arr.length === 0;
+    if (!arr.length) return;
+    const s = active();
+    arr.forEach((e) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'user-tpl';
+      if (s && s.templateId === e.id) b.classList.add('selected');
+      b.textContent = e.name || 'Unnamed';
+      b.title = 'Use "' + (e.name || 'Unnamed') + '" in this section';
+      b.setAttribute('aria-pressed', String(s && s.templateId === e.id));
+      b.addEventListener('click', () => applyLibToSection('template', e.id));
+      list.appendChild(b);
+    });
+  }
+
+  function renderModelCards() {
+    const cur = currentModelKey();
+    const s = active();
+    const isModel = cur !== null && !(s && s.templateId);
+    document.querySelectorAll('[data-model]').forEach((b) => {
+      const on = b.dataset.model === cur;
+      b.classList.toggle('selected', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    // The editor only serves user library content. A pristine built-in
+    // model shows no code.
+    const det = document.querySelector('.tex-details');
+    if (det) det.hidden = isModel;
+    // Expanded editor hides every model button. Collapsed editor shows
+    // them all back: the 4 model cards plus the user template row.
+    const expanded = Boolean(det && !det.hidden && det.open);
+    const grid = document.querySelector('.model-grid');
+    if (grid) grid.hidden = expanded;
+    const hint = document.querySelector('#model-hint');
+    if (hint) hint.hidden = expanded;
+    const list = document.querySelector('#user-models');
+    if (list) list.hidden = expanded || !list.querySelector('.user-tpl');
+  }
+
+  function bindModelCards() {
+    document.querySelectorAll('[data-model]').forEach((b) => {
+      b.addEventListener('click', () => applyBuiltinModel(b.dataset.model));
+    });
+    const det = document.querySelector('.tex-details');
+    if (det) det.addEventListener('toggle', () => renderModelCards());
   }
 
   function fillStep1() {
@@ -1006,6 +1219,8 @@
       hidePdf();
       updateAllCounters();
       renderLibSelects();
+      renderUserModels();
+      renderModelCards();
       if (window.Chat) Chat.render();
       return;
     }
@@ -1013,9 +1228,11 @@
     STEP1_FIELDS.forEach((k) => { $(k).value = s[k]; });
     STEP2_FIELDS.forEach((k) => { $(k).value = s[k] || ''; });
     $('lang').value = s.lang;
-    $('genCover').checked = s.genCover;
     if (pdfSectionId !== activeId) hidePdf();
     renderLibSelects();
+    renderUserModels();
+    renderModelCards();
+    renderSetupSummary();
     updateAllCounters();
     if (window.Chat) Chat.render();
   }
@@ -1062,6 +1279,7 @@
     touch(s); saveAll();
     setStatus('CV_OUT.md generated — review it in Step 2', 'ok');
     toast('CV_OUT.md ready in Step 2', 'ok');
+    goTo(2);
   }
 
   async function genCover(s) {
@@ -1071,8 +1289,9 @@
     $('cover').value = s.cover;
     updateCounter('cover');
     touch(s); saveAll();
-    setStatus('cover.md generated', 'ok');
-    toast('cover.md ready', 'ok');
+    setStatus('cover.md generated — review it in Step 2', 'ok');
+    toast('cover.md ready in Step 2', 'ok');
+    goTo(2);
   }
 
   async function toTex(s) {
@@ -1099,16 +1318,19 @@
       setStatus('LLM returned markdown, not LaTeX (' + texProblem + ') — previous .tex kept. Regenerate or paste a .tex starting with \\documentclass.', 'err');
       log('toTex warning: output looks like ' + texProblem + ', not LaTeX. Head: ' + fresh.trim().slice(0, 200));
       toast('The model returned markdown instead of LaTeX — previous .tex kept.', 'err', 6000);
+      goTo(3);
+      return;
     } else {
       s.tex = fresh;
       s.texHash = curHash;
       $('tex').value = s.tex;
       updateCounter('tex');
       touch(s); saveAll();
-      setStatus('.tex generated — review and compile in Step 3', 'ok');
-      toast('.tex generated in Step 3', 'ok');
+      setStatus('.tex generated — compiling the PDF…', 'ok');
+      toast('.tex generated in Step 3 — compiling the PDF', 'ok');
     }
     goTo(3);
+    await compilePdf();
   }
 
   // Fingerprint of the inputs a .tex was generated from. toTex stamps
@@ -1195,12 +1417,13 @@
       // Consumed: reusing the pre-fix log against the new tex would
       // send the model fixing an already-fixed file in circles.
       lastCompileError = '';
-      setStatus('LaTeX fixed — review and compile again', 'ok');
-      toast('Fixed .tex applied — compile again', 'ok');
+      setStatus('LaTeX fixed — compiling again…', 'ok');
+      toast('Fixed .tex applied — compiling again', 'ok');
+      await compilePdf();
     }
   }
 
-  // ---------- Step 3 / Engine ----------
+  // ---------- Step 5 / Engine ----------
   function getEngine() {
     if (engine) return Promise.resolve(engine);
     if (!enginePromise) {
@@ -1228,7 +1451,7 @@
     const s = active();
     if (!s) return;
     if (!s.tex.trim()) {
-      setStatus('Step 3: the .tex is empty — generate or paste a .tex.', 'warn');
+      setStatus('Step 5: the .tex is empty — generate or paste a .tex.', 'warn');
       toast('Compile what? CV.tex is empty.', 'warn');
       return;
     }
@@ -1240,7 +1463,7 @@
       // The fix prompt already receives the tex as BROKEN .TEX — storing
       // another copy here only bloats it toward truncation.
       lastCompileError = 'Pre-validation refuse (' + texProblem + '). First line: ' + firstLine;
-      setStatus('Step 3: CV.tex looks like ' + texProblem + ' — it must start with \\documentclass. Regenerate via "Convert to LaTeX" or use Fix with LLM.', 'err');
+      setStatus('Step 5: CV.tex looks like ' + texProblem + ' — it must start with \\documentclass. Regenerate via "Convert to LaTeX" or use Fix with LLM.', 'err');
       log('Refusing to compile: CV.tex problem = ' + texProblem + '. First line: ' + firstLine);
       toast('CV.tex is not LaTeX (' + texProblem + ') — use Fix with LLM or regenerate.', 'err', 6000);
       return;
@@ -1304,6 +1527,24 @@
     viewer.style.display = 'block';
   }
 
+  // The tex editor collapses to a button row. Expanded shows tex plus PDF
+  // plus chat as before. Collapsed shows PDF plus chat in 2 columns.
+  function setTexCollapsed(collapsed) {
+    const card = $('tex-card');
+    const grid = $('step3-grid');
+    const btn = $('btn-tex-toggle');
+    if (!card || !grid || !btn) return;
+    card.style.display = collapsed ? 'none' : '';
+    grid.classList.toggle('grid-2', collapsed);
+    grid.classList.toggle('grid-3', !collapsed);
+    btn.setAttribute('aria-expanded', String(!collapsed));
+  }
+
+  function isTexCollapsed() {
+    const card = $('tex-card');
+    return Boolean(card && card.style.display === 'none');
+  }
+
   // ---------- Stepper ----------
   function goTo(n) {
     document.querySelectorAll('.panel').forEach((p) => (p.style.display = 'none'));
@@ -1317,37 +1558,207 @@
     if (n === 3 && window.Chat) Chat.render();
   }
 
-  // ---------- LLM config ----------
-  function fillConfig() {
-    $('cfg-model').value = config.model;
-    LLM_VENDORS.forEach((v) => {
-      const k = $('cfg-key-' + v);
-      const u = $('cfg-url-' + v);
-      if (k) k.value = (config.keys && config.keys[v]) || '';
-      if (u) u.value = (config.urls && config.urls[v]) || '';
+  // ---------- Setup block (config + CV base) ----------
+  // The block stays on top of every step. It collapses to a summary bar
+  // so the work area keeps the space. The state is session-only.
+  function isSetupCollapsed() {
+    const block = $('setup-block');
+    return Boolean(block && block.classList.contains('collapsed'));
+  }
+
+  function setSetupCollapsed(collapsed) {
+    const block = $('setup-block');
+    const btn = $('btn-setup-toggle');
+    if (!block || !btn) return;
+    block.classList.toggle('collapsed', collapsed);
+    btn.setAttribute('aria-expanded', String(!collapsed));
+    renderSetupSummary();
+  }
+
+  // Ready means: the user saved the setup values, and the section has a
+  // master CV and a template. The seeded defaults do not count as saved.
+  function setupIsReady() {
+    const s = active();
+    if (!s) return false;
+    if (config.setupDone !== true) return false;
+    return Boolean(s.master && s.master.trim()) && Boolean(s.template && s.template.trim());
+  }
+
+  // Marks the setup as saved. The user touched a setup field.
+  function markSetupDone() {
+    if (config.setupDone === true) return;
+    config.setupDone = true;
+    saveAllDebounced();
+  }
+
+  // Applied on load and on every section change. A manual toggle wins
+  // until the next load or switch.
+  function applySetupAutoState() {
+    setSetupCollapsed(setupIsReady());
+  }
+
+  function renderSetupSummary() {
+    const sum = $('setup-summary');
+    const chips = $('setup-chips');
+    if (!sum || !chips) return;
+    const parsed = vendorOfModel(config.model);
+    const model = parsed ? parsed.rest : config.model;
+    sum.textContent = 'Configuração: ' + (model || 'sem modelo');
+    chips.innerHTML = '';
+    const s = active();
+    const masterName = s && s.master ? s.master.split('\n')[0].replace(/^#\s*/, '') : '';
+    const modelKey = currentModelKey();
+    const labels = [];
+    if (parsed) labels.push(parsed.vendor);
+    if (masterName) labels.push(masterName.slice(0, 28));
+    if (modelKey) labels.push(modelKey);
+    labels.forEach((t) => {
+      const c = document.createElement('span');
+      c.className = 'setup-chip';
+      c.textContent = t;
+      chips.appendChild(c);
     });
   }
 
+  // ---------- LLM config (setup block) ----------
+  // One vendor selected at a time (session only). The detail block shows
+  // that vendor's stored values. The model input holds the part after
+  // "vendor:" — saving writes the full "vendor:name" spec back.
+  let selectedVendor = null;
+
+  const VENDOR_META = [
+    { id: 'openai', name: 'OpenAI', desc: 'api.openai.com' },
+    { id: 'anthropic', name: 'Anthropic', desc: 'api.anthropic.com' },
+    { id: 'google', name: 'Google', desc: 'generativelanguage.googleapis.com' },
+    { id: 'deepseek', name: 'DeepSeek', desc: 'api.deepseek.com' },
+    { id: 'xai', name: 'xAI', desc: 'api.x.ai' },
+    { id: 'cerebras', name: 'Cerebras', desc: 'api.cerebras.ai' },
+    { id: 'fireworks', name: 'Fireworks', desc: 'api.fireworks.ai' },
+    { id: 'moonshotai', name: 'Moonshot AI', desc: 'api.moonshot.ai' },
+    { id: 'openrouter', name: 'OpenRouter', desc: 'openrouter.ai' },
+    { id: 'alibaba', name: 'Alibaba', desc: 'dashscope-intl.aliyuncs.com' },
+    { id: 'zai', name: 'Z.ai', desc: 'api.z.ai' },
+    { id: 'custom', name: 'Custom', desc: 'Sua URL (formato OpenAI)' },
+  ];
+
+  function vendorOfModel(model) {
+    const m = /^\s*([A-Za-z]+)\s*:\s*(.+?)\s*$/.exec(model || '');
+    if (!m || LLM_VENDORS.indexOf(m[1].toLowerCase()) === -1) return null;
+    return { vendor: m[1].toLowerCase(), rest: m[2] };
+  }
+
+  function renderVendorCards() {
+    const grid = $('vendor-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    VENDOR_META.forEach((meta) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'model-card';
+      b.dataset.vendor = meta.id;
+      const on = selectedVendor === meta.id;
+      if (on) b.classList.add('selected');
+      b.setAttribute('aria-pressed', String(on));
+      const badge = document.createElement('span');
+      badge.className = 'model-badge';
+      badge.textContent = meta.id.toUpperCase();
+      const title = document.createElement('span');
+      title.className = 'model-title';
+      title.textContent = meta.name;
+      const desc = document.createElement('span');
+      desc.className = 'model-desc';
+      desc.textContent = meta.desc;
+      b.append(badge, title, desc);
+      b.addEventListener('click', () => {
+        selectedVendor = meta.id;
+        markSetupDone();
+        renderVendorCards();
+        renderVendorDetail();
+      });
+      grid.appendChild(b);
+    });
+  }
+
+  function renderVendorDetail() {
+    const form = $('cfg-panel');
+    const hint = $('vendor-pick-hint');
+    const title = $('vendor-title');
+    const v = selectedVendor;
+    if (!v) {
+      if (form) form.hidden = true;
+      if (hint) hint.hidden = false;
+      if (title) title.textContent = 'Detalhes';
+      return;
+    }
+    const meta = VENDOR_META.find((m) => m.id === v);
+    if (title) title.textContent = (meta ? meta.name : v) + ' — Detalhes';
+    if (hint) hint.hidden = true;
+    if (form) form.hidden = false;
+    const parsed = vendorOfModel(config.model);
+    $('cfg-model').value = parsed && parsed.vendor === v ? parsed.rest : '';
+    $('cfg-key').value = (config.keys && config.keys[v]) || '';
+    $('cfg-key').type = 'password';
+    const eye = $('btn-key-eye');
+    if (eye) eye.setAttribute('aria-label', 'Show key');
+    const extra = $('cfg-custom-extra');
+    if (extra) extra.hidden = v !== 'custom';
+    if (v === 'custom') {
+      $('cfg-url').value = (config.urls && config.urls.custom) || '';
+      $('cfg-api').value = config.customApi === 'responses' ? 'responses' : 'chat';
+      $('cfg-headers').value = config.customHeaders || '';
+    }
+  }
+
+  function fillConfig() {
+    const parsed = vendorOfModel(config.model);
+    selectedVendor = parsed ? parsed.vendor : null;
+    renderVendorCards();
+    renderVendorDetail();
+    renderSetupSummary();
+  }
+
   function bindConfig() {
-    /* Vendors with no row in the HTML (or future HTML missing the row) must
-     * not take down init: without the guard, the TypeError aborted the rest
-     * of the listeners and Chat.init — dead page. */
+    renderVendorCards();
     const modelEl = $('cfg-model');
     if (modelEl) modelEl.addEventListener('input', () => {
-      config.model = modelEl.value.trim() || 'g';
+      const name = modelEl.value.trim();
+      if (name && selectedVendor) {
+        config.model = selectedVendor + ':' + name;
+        markSetupDone();
+        saveAllDebounced();
+      }
+    });
+    const keyEl = $('cfg-key');
+    if (keyEl) keyEl.addEventListener('input', () => {
+      if (!selectedVendor) return;
+      config.keys[selectedVendor] = keyEl.value.trim();
+      markSetupDone();
       saveAllDebounced();
     });
-    LLM_VENDORS.forEach((v) => {
-      const k = $('cfg-key-' + v);
-      const u = $('cfg-url-' + v);
-      if (k) k.addEventListener('input', () => {
-        config.keys[v] = k.value.trim();
-        saveAllDebounced();
-      });
-      if (u) u.addEventListener('input', () => {
-        config.urls[v] = u.value.trim();
-        saveAllDebounced();
-      });
+    const eye = $('btn-key-eye');
+    if (eye) eye.addEventListener('click', () => {
+      const input = $('cfg-key');
+      if (!input) return;
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      eye.setAttribute('aria-label', show ? 'Hide key' : 'Show key');
+      eye.setAttribute('title', show ? 'Hide key' : 'Show key');
+    });
+    const urlEl = $('cfg-url');
+    if (urlEl) urlEl.addEventListener('input', () => {
+      config.urls.custom = urlEl.value.trim();
+      markSetupDone();
+      saveAllDebounced();
+    });
+    const apiEl = $('cfg-api');
+    if (apiEl) apiEl.addEventListener('change', () => {
+      config.customApi = apiEl.value === 'responses' ? 'responses' : 'chat';
+      saveAllDebounced();
+    });
+    const headersEl = $('cfg-headers');
+    if (headersEl) headersEl.addEventListener('input', () => {
+      config.customHeaders = headersEl.value;
+      saveAllDebounced();
     });
     $('btn-cfg-test').addEventListener('click', async () => {
       setBusy('btn-cfg-test', true);
@@ -1376,7 +1787,16 @@
       applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
     });
     $('btn-menu').addEventListener('click', () => openSidebar('lib'));
-    $('btn-cfg').addEventListener('click', () => openSidebar('llm'));
+    $('btn-cfg').addEventListener('click', () => {
+      setSetupCollapsed(false);
+      document.querySelector('#setup-block').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    $('btn-goto-config').addEventListener('click', () => {
+      closeSidebar();
+      setSetupCollapsed(false);
+      document.querySelector('#setup-block').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    $('btn-setup-toggle').addEventListener('click', () => setSetupCollapsed(!isSetupCollapsed()));
     $('btn-sidebar-close').addEventListener('click', closeSidebar);
     $('sidebar-backdrop').addEventListener('click', closeSidebar);
     document.querySelectorAll('.sidebar-tab').forEach((t) => {
@@ -1398,8 +1818,10 @@
     renderSections();
     fillStep1();
     fillConfig();
+    applySetupAutoState();
     renderLibrary();
     bindFields();
+    bindModelCards();
     bindConfig();
 
     ['cvOut', 'cover', 'tex'].forEach((k) => {
@@ -1431,6 +1853,7 @@
     $('btn-to-tex').addEventListener('click', () => generate(toTex, 'btn-to-tex', 'Converting to LaTeX'));
     $('btn-fix-tex').addEventListener('click', () => generate(fixTex, 'btn-fix-tex', 'Fixing LaTeX'));
     $('btn-compile').addEventListener('click', compilePdf);
+    $('btn-tex-toggle').addEventListener('click', () => setTexCollapsed(!isTexCollapsed()));
 
     document.querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', () => goTo(+b.dataset.nav)));
 
@@ -1455,7 +1878,11 @@
       saveAll,
       toast,
       confirm: modal.confirm,
-      openLlmConfig: () => openSidebar('llm'),
+      openLlmConfig: () => {
+        setSetupCollapsed(false);
+        const block = document.querySelector('#setup-block');
+        if (block) block.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      },
     });
 
     goTo(1);
@@ -1466,8 +1893,8 @@
 
   function addLibraryEntry(kind) {
     const arr = libArr(kind);
-    if (arr.length >= LIB_MAX) {
-      toast('Library limit of ' + LIB_MAX + ' items.', 'warn');
+    if (arr.length >= libMax(kind)) {
+      toast('Library limit of ' + libMax(kind) + ' items.', 'warn');
       return;
     }
     const entry = { id: 'x' + Date.now().toString(36), name: '', content: '' };
@@ -1483,16 +1910,16 @@
   async function createInitial() {
     const s = defaultSection();
     s.name = 'Default';
-    try {
-      [s.role, s.master, s.template, s.pitch] = await Promise.all([
-        fetchText(DEFAULT_FILES.role),
-        fetchText(DEFAULT_FILES.masterEn),
-        fetchText(DEFAULT_FILES.template),
-        fetchText(DEFAULT_FILES.pitch),
-      ]);
-    } catch (e) {
-      console.warn('defaults fetch failed', e);
-    }
+    const [role, master, template, pitch] = await Promise.all([
+      fetchOptional(DEFAULT_FILES.role),
+      fetchOptional(DEFAULT_FILES.masterEn),
+      fetchOptional(DEFAULT_FILES.template),
+      fetchOptional(DEFAULT_FILES.pitch),
+    ]);
+    s.role = nonEmpty(role) || embeddedRole();
+    s.master = nonEmpty(master) || embeddedMaster(s.lang);
+    s.template = nonEmpty(template) || embeddedTemplate('ats');
+    s.pitch = nonEmpty(pitch);
     const id = 's' + Date.now().toString(36);
     sections[id] = s;
     activeId = id;
