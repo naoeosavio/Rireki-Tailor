@@ -11,13 +11,21 @@ const { chromium } = require('playwright');
   await page.waitForTimeout(1500);
 
   const names = () => page.$$eval('#section-select option', (o) => o.map((x) => x.textContent));
+  // The setup block collapses itself when the values are saved. Open it
+  // before touching anything inside it.
+  const openSetup = async () => {
+    if (await page.$eval('#setup-block', (e) => e.classList.contains('collapsed'))) {
+      await page.click('#btn-setup-toggle');
+      await page.waitForTimeout(200);
+    }
+  };
   console.log('sections:', await names());
   console.log('master:', (await page.inputValue('#master')).length, '| template:', (await page.inputValue('#template')).length, '| role:', (await page.inputValue('#role')).length);
 
   // TellSDK loaded + LLM config
   const sdk = await page.evaluate(() => ({
     tell: typeof (window.TellSDK && window.TellSDK.tell),
-    nVendors: document.querySelectorAll('#cfg-panel .vendor-row').length,
+    nVendors: document.querySelectorAll('#vendor-grid .model-card').length,
     chatFn: typeof window.Chat !== 'undefined',
   }));
   console.log('TellSDK:', JSON.stringify(sdk));
@@ -28,16 +36,18 @@ const { chromium } = require('playwright');
   await page.waitForTimeout(200);
   console.log('after toggle:', await page.evaluate(() => document.documentElement.dataset.theme), '(expected: light)');
 
-  // ---------- LLM config inside the menu (sidebar) ----------
+  // ---------- LLM config (Step 1) ----------
   console.log('cfg model default:', await page.inputValue('#cfg-model'));
-  await page.click('#btn-cfg'); // opens the sidebar on the LLM tab
-  await page.waitForSelector('#cfg-panel', { state: 'visible' });
+  await page.click('#btn-cfg'); // goes to the Config step
+  await page.waitForSelector('#vendor-grid .model-card', { state: 'visible' });
+  await page.click('[data-vendor="google"]');
+  await page.waitForTimeout(200);
   await page.fill('#cfg-model', 'd');
-  await page.fill('#cfg-key-google', 'AIza-test');
+  await page.fill('#cfg-key', 'AIza-test');
   await page.waitForTimeout(300);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1500);
-  console.log('cfg persisted:', await page.inputValue('#cfg-model'), '| google key persisted:', (await page.inputValue('#cfg-key-google')).length > 0);
+  console.log('cfg persisted:', await page.inputValue('#cfg-model'), '| google key persisted:', (await page.inputValue('#cfg-key')).length > 0);
   console.log('theme persisted:', await page.evaluate(() => document.documentElement.dataset.theme), '(expected: light)');
 
   // new section via the CUSTOM modal
@@ -49,6 +59,8 @@ const { chromium } = require('playwright');
   console.log('master inherited:', (await page.inputValue('#master')).length > 0);
 
   // edit role and switch sections (checks isolation)
+  await page.click('[data-nav="1"]');
+  await page.waitForTimeout(200);
   await page.fill('#role', 'SPECIFIC TEST JOB');
   await page.waitForTimeout(200);
   await page.selectOption('#section-select', { index: 1 });
@@ -98,9 +110,15 @@ const { chromium } = require('playwright');
   await page.waitForTimeout(300);
 
   // per-section dropdown: copy a library master into the 2nd section
-  await page.click('[data-nav="1"]');
   await page.waitForTimeout(200);
   await page.selectOption('#section-select', { index: 1 });
+  await page.waitForTimeout(300);
+  // The setup block collapses once the values are saved, and a section
+  // switch re-applies that state. Open it to reach the master dropdown.
+  if (await page.$eval('#setup-block', (e) => e.classList.contains('collapsed'))) {
+    await page.click('#btn-setup-toggle');
+    await page.waitForTimeout(200);
+  }
   await page.waitForTimeout(200);
   await page.$eval('#role', (el) => { el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true })); });
   await page.selectOption('#master-lib', { index: 1 }); // first library entry
@@ -121,11 +139,12 @@ const { chromium } = require('playwright');
   console.log('assistant greeting:', (await page.$$('.msg.assistant')).length >= 1);
 
   // clear the key to test the no-API-key path (no network)
-  await page.click('#btn-cfg');
-  await page.waitForSelector('#cfg-key-google', { state: 'visible' });
-  await page.fill('#cfg-key-google', '');
+  await openSetup();
+  await page.click('[data-vendor="google"]');
+  await page.waitForSelector('#cfg-key', { state: 'visible' });
+  await page.fill('#cfg-key', '');
   await page.waitForTimeout(300);
-  await page.click('#btn-sidebar-close');
+  await page.click('[data-nav="3"]');
   await page.waitForTimeout(200);
 
   await page.fill('#chat-input', 'What should I improve in this CV?');

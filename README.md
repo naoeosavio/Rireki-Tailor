@@ -50,12 +50,13 @@ the files come straight from the `src/pdftex/{formatId}/{name}` mirror.
 | `test/probe.js` / `verify.js` | Diagnostics: headless compile with server logs / verification of the generated PDF. |
 | `src/pdftex/` | **Static mirror** (bootstrap complete): 82 files, 34 MB — includes `10/swiftlatexpdftex.fmt` (22 MB, built via wasm, magic `XT2W`). |
 
-## App flow (3 steps)
+## App flow (setup block + 3 steps)
 
-1. **Inputs** — job description, master CV (EN/PT toggle), LaTeX template and optional pitch,
-   with file upload, "↺ default" buttons (restore from `data/`), **library dropdowns**
-   (copy a global master/template into the section) and **"save as model"** buttons
-   (bookmark).
+A **setup block** sits on top of every step: the LLM config form and the
+CV base (master CV plus visual LaTeX template). It collapses to a summary
+bar, so the work area keeps the space.
+
+1. **Vaga** — job description and optional pitch.
    **Generate CV_OUT.md** and **cover.md** via the LLM (one-shot, with spinner + progress bar).
 2. **Markdown** — edit/copy/download CV_OUT.md and cover.md. **Convert to LaTeX** → CV.tex
    (same prompt as `gen-pdf`: extracts the template's skeleton and fills it with the CV).
@@ -66,18 +67,21 @@ the files come straight from the `src/pdftex/{formatId}/{name}` mirror.
 
 ### Global menu (sidebar) and library
 
-- Open buttons: **hamburger** (Library tab) and **LLM** in the header (LLM tab); closes with
+- Open buttons: **hamburger** (Library tab) and **LLM** in the header (goes to Step 1); sidebar closes with
   X, the backdrop, or `Esc`.
-- **Library**: up to **2 master CVs** (each with an EN/PT language) and **2 .tex templates**,
+- **Library**: up to **2 master CVs** (each with an EN/PT language) and **4 user .tex templates**,
   with name, inline editing, upload and deletion (confirmation modal). Auto-seeded on first
-  run ("Master EN (default)" + "CV_ATS (default)" from `data/`).
-- **Per-section copy**: picking an item from a card's dropdown (Step 1) **copies** its content
+  run with one master ("Master (default)" from `data/` or the built-in default).
+- **Template models**: 4 read-only starting points (modern, classic, ATS, academic) in
+  `src/js/defaults.js`. They appear in the sidebar and in the setup block template dropdown.
+  Selecting one **copies** it into the section. The copy stays editable. The model never changes.
+- **Per-section copy**: picking an item from a card's dropdown (setup block) **copies** its content
   into the section, which stays editable/independent (`s.masterId`/`s.templateId` flip to
   "customized" if the user edits on top). A new section inherits the current one.
 - **Save as model**: captures the active section's master/template into the library (the
-  bookmark button on the card, or the equivalent action in the sidebar); limit of 2 with a
-  toast.
-- **LLM config** lives in the sidebar's LLM tab (same `#cfg-*` IDs); keys/urls in localStorage.
+  bookmark button on the card, or the equivalent action in the sidebar); limit of 2 masters
+  and 4 templates with a toast.
+- **LLM config** lives in the setup block (same `#cfg-*` IDs); keys/urls in localStorage. The header LLM button and the sidebar LLM tab open that block.
 - Persistence: `localStorage["riki.library"]` = `{masters:[{id,name,lang,content}], templates:[…]}`;
   included in the JSON export/import (`riki-secoes-*.json`).
 
@@ -96,7 +100,7 @@ the files come straight from the `src/pdftex/{formatId}/{name}` mirror.
   code blocks, inline code, bold, italic, lists, http/https links, headings).
 - **Quick-asks** in the empty state (filtered by the available fields); Enter sends,
   Shift+Enter adds a newline; copy message; context chips show what the assistant "sees".
-- No API key: an error bubble with a button that opens the sidebar on the LLM tab.
+- No API key: an error bubble with a button that opens the setup block.
 
 ### UI (theme, toasts, modals)
 
@@ -113,11 +117,11 @@ the files come straight from the `src/pdftex/{formatId}/{name}` mirror.
 - Generation via `TellSDK.tell` (the CLI's `tell --no-exec` as a function): no-exec system
   prompt, model by alias or full spec (`j`, `d`, `g`, `openai:gpt-5.6-sol:high`…),
   `thinking`/`<RUN>` tags stripped, one-shot (no streaming).
-- **Global config** in the "LLM" panel: Model field (default `j` = google:gemini-3.5-flash-lite)
-  + a grid of 13 vendors (openai, anthropic, google, deepseek, xai, cerebras, fireworks,
-  moonshotai, openrouter, alibaba, zai, vast, local) with key and base URL. The URLs come
-  **pre-filled** with the official endpoints (direct route); if the browser blocks it, swap
-  the field for your own CORS proxy URL (second route). Details in `docs/llm-base-url.md`.
+- **Global config** in Step 1: a grid of 12 vendor cards (openai, anthropic, google, deepseek,
+  xai, cerebras, fireworks, moonshotai, openrouter, alibaba, zai, custom). A click shows the
+  detail block: model, provider key (with eye toggle), connection test. The `custom` detail
+  adds endpoint URL, API type (`chat`/`responses`), and extra JSON headers; `custom:<model>`
+  calls that endpoint directly (keyless endpoints allowed). Details in `docs/llm-base-url.md`.
   Everything lives in localStorage.
 - Automatic migration of the legacy config (`apiKey`→`keys.openai`, `baseURL`→`urls.openai`).
 - The SDK's IIFE bundle is self-contained (defines its own `process`, no `require()` of node
