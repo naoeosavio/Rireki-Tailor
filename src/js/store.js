@@ -28,6 +28,11 @@ const STORE_MAX_SECTIONS_LOAD = 2000;
 /* File uploads (master/template/tex via FileReader): without a ceiling, a
  * multi-GB file goes entirely into RAM and then into localStorage. */
 const STORE_MAX_FILE_BYTES = 8 * 1024 * 1024;
+/* A model id is short. A long value is corruption, not a model. */
+const STORE_MAX_MODEL_CHARS = 120;
+/* The wires of the custom endpoint. "auto" lets the sdk infer the wire
+ * from the model id. */
+const CUSTOM_WIRES = ['auto', 'chat', 'responses', 'messages'];
 
 function isFileTooBig(size) {
   return typeof size === 'number' && isFinite(size) && size > STORE_MAX_FILE_BYTES;
@@ -220,22 +225,32 @@ function mergeLibraryList(local, incoming, kind, max) {
 /* Strict allowlist: only the model and the keys/urls of known vendors pass,
  * so a backup cannot inject a router, a third-party URL, or extra fields
  * into the config. */
-function normalizeConfig(raw, vendors) {
+function normalizeConfig(raw, vendors, defaultModel) {
   const src = isStoreObject(raw) ? raw : {};
   const list = Array.isArray(vendors) ? vendors : [];
-  const model = typeof src.model === 'string' && src.model.trim() ? src.model.trim() : 'j';
+  /* The default model of the host comes from the core. */
+  const fallback = typeof defaultModel === 'string' && defaultModel.trim() ? defaultModel.trim() : 'j';
+  const model = typeof src.model === 'string' && src.model.trim() ? src.model.trim() : fallback;
   const rawKeys = isStoreObject(src.keys) ? src.keys : {};
   const rawUrls = isStoreObject(src.urls) ? src.urls : {};
+  const rawModels = isStoreObject(src.models) ? src.models : {};
   const keys = {};
   const urls = {};
+  const models = {};
   list.forEach((vendor) => {
     if (typeof rawKeys[vendor] === 'string' && rawKeys[vendor].trim()) keys[vendor] = rawKeys[vendor].trim();
     if (typeof rawUrls[vendor] === 'string' && rawUrls[vendor].trim()) urls[vendor] = rawUrls[vendor].trim();
+    /* One model per vendor. The value is a model id, not a command. */
+    if (typeof rawModels[vendor] === 'string' && rawModels[vendor].trim()) {
+      const name = rawModels[vendor].trim();
+      if (name.length <= STORE_MAX_MODEL_CHARS) models[vendor] = name;
+    }
   });
   if (typeof src.apiKey === 'string' && src.apiKey.trim() && !keys.openai) keys.openai = src.apiKey.trim();
   if (typeof src.baseURL === 'string' && src.baseURL.trim() && !urls.openai) urls.openai = src.baseURL.trim();
   const out = { model: model, keys: keys, urls: urls };
-  if (src.customApi === 'responses' || src.customApi === 'chat') out.customApi = src.customApi;
+  if (Object.keys(models).length) out.models = models;
+  if (CUSTOM_WIRES.indexOf(src.customApi) !== -1) out.customApi = src.customApi;
   if (typeof src.customHeaders === 'string' && src.customHeaders) out.customHeaders = src.customHeaders;
   /* setupDone means the user saved the setup values. The seeded defaults
      do not set it, so a fresh profile still shows the setup block. */
@@ -250,6 +265,8 @@ if (typeof module !== 'undefined' && module.exports) {
     STORE_MAX_SECTIONS: STORE_MAX_SECTIONS,
     STORE_MAX_SECTIONS_LOAD: STORE_MAX_SECTIONS_LOAD,
     STORE_MAX_FILE_BYTES: STORE_MAX_FILE_BYTES,
+    STORE_MAX_MODEL_CHARS: STORE_MAX_MODEL_CHARS,
+    CUSTOM_WIRES: CUSTOM_WIRES,
     isFileTooBig: isFileTooBig,
     isStoreSafeId: isStoreSafeId,
     readJsonSafe: readJsonSafe,

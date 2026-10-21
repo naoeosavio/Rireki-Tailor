@@ -148,25 +148,24 @@ Be concise and direct; use short lists when helpful.`)
     return typeof content === 'string' ? content : '';
   }
 
+  /* The core owns the truncation of a conversation. The global comes from
+   * the module of the vendor. */
+  function truncateContext(text, maxChars) {
+    const core = typeof globalThis !== 'undefined' ? globalThis.TellCore : null;
+    if (!core || typeof core.truncate_context !== 'function') {
+      throw new Error('TellCore not loaded (@tell-ai/core).');
+    }
+    return core.truncate_context(text, maxChars);
+  }
+
   function serializeHistory(chat) {
     const list = Array.isArray(chat) ? chat : [];
     const tail = list.slice(-HISTORY_MAX_MESSAGES);
-    const lines = tail.map((m) => (m.role === 'user' ? 'Usuário' : 'Assistente') + ':\n' + historyText(m));
-    let total = 0;
-    const kept = [];
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const size = lines[i].length + 2;
-      if (total + size > HISTORY_MAX_CHARS && kept.length) break;
-      total += size;
-      kept.unshift(lines[i]);
-    }
-    if (!kept.length) return '';
-    /* One message can be longer than the limit on its own. The newest part
-     * of it is the useful part. */
-    if (kept[0].length > HISTORY_MAX_CHARS - 2) {
-      kept[0] = kept[0].slice(-(HISTORY_MAX_CHARS - 2));
-    }
-    return kept.join('\n\n');
+    if (!tail.length) return '';
+    /* The markers are the ones the core splits a context with. The core
+     * then cuts the history at a turn border. */
+    const turns = tail.map((m) => (m.role === 'user' ? 'User' : 'Assistant') + ':\n' + historyText(m));
+    return truncateContext(turns.join('\n\n'), HISTORY_MAX_CHARS);
   }
 
   // ---------- render ----------
@@ -293,6 +292,22 @@ Be concise and direct; use short lists when helpful.`)
    * conversation and must not come back. */
   let chatGeneration = 0;
 
+  /* The core owns the cancel token. The user stops the pending answer. */
+  let cancelToken = null;
+
+  function setStopVisible(on) {
+    const btn = $('chat-stop');
+    if (btn) btn.hidden = !on;
+  }
+
+  /* The core owns the limit of a delivered answer. The marker says how many
+   * bytes were cut. */
+  function truncateAnswer(text) {
+    const core = typeof globalThis !== 'undefined' ? globalThis.TellCore : null;
+    if (!core || typeof core.truncate_output !== 'function') return text;
+    return core.truncate_output(text, core.DEFAULT_OUTPUT_MAX_BYTES);
+  }
+
   async function send() {
     const s = deps.getSection();
     const input = $('chat-input');
@@ -321,15 +336,23 @@ Be concise and direct; use short lists when helpful.`)
 
     busy = true;
     setInputEnabled(false);
+    setStopVisible(true);
+    cancelToken = createCancelToken();
     addTyping();
     try {
       const reply = await chatTell(text, deps.getConfig(), {
         system: buildSystem(s),
         context: serializeHistory(s.chat.slice(0, -1)),
+        cancellation: cancelToken,
       });
       /* The conversation was cleared while the model worked. */
       if (generation !== chatGeneration) return;
-      s.chat.push({ role: 'assistant', content: reply, at: Date.now() });
+      /* The user stopped the answer. The runtime dropped it. */
+      if (cancelToken && cancelToken.cancelled) {
+        removeTyping();
+        return;
+      }
+      s.chat.push({ role: 'assistant', content: truncateAnswer(reply), at: Date.now() });
       deps.touch(s);
       deps.saveAll();
       render();
@@ -338,7 +361,9 @@ Be concise and direct; use short lists when helpful.`)
       renderError(e);
     } finally {
       busy = false;
+      cancelToken = null;
       setInputEnabled(true);
+      setStopVisible(false);
     }
   }
 
@@ -381,6 +406,9 @@ Be concise and direct; use short lists when helpful.`)
 
     $('chat-send').addEventListener('click', send);
     $('chat-clear').addEventListener('click', clearChat);
+    $('chat-stop').addEventListener('click', () => {
+      if (cancelToken) cancelToken.cancel();
+    });
 
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
