@@ -275,6 +275,26 @@ test('normalizeConfig: an array as keys does not become an object of indices', (
   assert.deepStrictEqual(c.keys, {});
 });
 
+test('normalizeConfig: the model of each vendor is kept', () => {
+  const c = store.normalizeConfig({ models: { openai: 'g', anthropic: 's', evil: 'x' } }, VENDORS);
+  assert.deepStrictEqual(c.models, { openai: 'g', anthropic: 's' });
+});
+
+test('normalizeConfig: a broken model of a vendor is dropped', () => {
+  const c = store.normalizeConfig({
+    models: { openai: 5, anthropic: '  ', google: 'a'.repeat(500) },
+  }, VENDORS);
+  assert.strictEqual(c.models, undefined);
+});
+
+test('normalizeConfig: the wire of the custom endpoint accepts the four values', () => {
+  assert.strictEqual(store.normalizeConfig({ customApi: 'auto' }, VENDORS).customApi, 'auto');
+  assert.strictEqual(store.normalizeConfig({ customApi: 'messages' }, VENDORS).customApi, 'messages');
+  assert.strictEqual(store.normalizeConfig({ customApi: 'chat' }, VENDORS).customApi, 'chat');
+  assert.strictEqual(store.normalizeConfig({ customApi: 'responses' }, VENDORS).customApi, 'responses');
+  assert.strictEqual(store.normalizeConfig({ customApi: 'smtp' }, VENDORS).customApi, undefined);
+});
+
 /* ================================================================== *
  * import caps — a hostile backup must not brick the app on load
  * ================================================================== */

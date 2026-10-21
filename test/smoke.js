@@ -7,6 +7,13 @@ const { chromium } = require('playwright');
   const errors = [];
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+  /* The dev server can hold a key in its env. The browser keeps its own
+   * key in this run, so the probe answers that the server holds nothing. */
+  await page.route('**/api/llm/config', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ enabled: false, model: 'l', vendors: [] }),
+  }));
   await page.goto('http://localhost:8080/index.html', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(1500);
 
@@ -24,7 +31,8 @@ const { chromium } = require('playwright');
 
   // TellSDK loaded + LLM config
   const sdk = await page.evaluate(() => ({
-    tell: typeof (window.TellSDK && window.TellSDK.tell),
+    ask: typeof (window.TellSDK && window.TellSDK.create_ask_ai),
+    core: typeof (window.TellCore && window.TellCore.create_core_runtime),
     nVendors: document.querySelectorAll('#vendor-grid .model-card').length,
     chatFn: typeof window.Chat !== 'undefined',
   }));

@@ -289,7 +289,7 @@ test('wiring: the Fix with LLM button exists in the PDF card', () => {
 test('wiring: app.js routes the button through generate(fixTex)', () => {
   const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
   assert.ok(src.includes("addEventListener('click', () => generate(fixTex"), 'button wiring missing');
-  assert.ok(src.includes('buildFixTexPrompt(broken, errTail'), 'fix prompt call missing');
+  assert.ok(src.includes('buildFixTexPrompt(state.tex, state.error'), 'fix prompt call missing');
   assert.ok(src.includes('.slice(-FIX_LOG_TAIL)'), 'log tail cap missing');
   assert.ok(src.includes('extractLatexError(res.log)'), 'compile error surfacing missing');
 });

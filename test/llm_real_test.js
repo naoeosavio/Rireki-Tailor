@@ -34,6 +34,10 @@ const { spawnSync } = require('child_process');
 const lib = require('./fuzz_lib.js');
 const prompts = require('../src/js/prompts.js');
 
+/* The chat bounds the history with the core. The Node build of the core
+ * has the same truncation as the browser build. */
+globalThis.TellCore = require('@tell-ai/core');
+
 const ROOT = path.resolve(__dirname, '..');
 const APP = path.join(ROOT, 'src', 'js', 'app.js');
 const CHAT = path.join(ROOT, 'src', 'js', 'chat.js');
@@ -75,7 +79,7 @@ const chat = new Function([
   lib.extractConst(CHAT, 'HISTORY_MAX_MESSAGES'),
   lib.extractFunctions(CHAT, [
     'escHtml', 'inlineMd', 'mdLite', 'fieldText',
-    'contextParts', 'buildSystem', 'historyText', 'serializeHistory',
+    'contextParts', 'buildSystem', 'historyText', 'truncateContext', 'serializeHistory',
   ]),
   'return { escHtml, inlineMd, mdLite, buildSystem, serializeHistory };',
 ].join('\n'))();
