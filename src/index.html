@@ -117,8 +117,11 @@
           <p class="hint" id="vendor-pick-hint">Selecione um provedor ao lado para configurar modelo e chave.</p>
           <form id="cfg-panel" onsubmit="return false" hidden>
             <label>Modelo selecionado:
-              <input id="cfg-model" placeholder="ex: gemini-2.5-flash">
+              <input id="cfg-model" list="cfg-model-list" placeholder="ex: gemini-2.5-flash">
             </label>
+            <datalist id="cfg-model-list"></datalist>
+            <p class="hint" id="cfg-model-spec"></p>
+            <p class="hint" id="cfg-server-hint" hidden></p>
             <label>Chave de API do provedor (API Key):
               <span class="key-wrap">
                 <input id="cfg-key" type="password" placeholder="Cole sua chave aqui (ex: AIzaSy... ou sk-...)">
@@ -130,13 +133,24 @@
                 <input id="cfg-url" placeholder="https://seu-endpoint/v1">
               </label>
               <label>API:
-                <select id="cfg-api"><option value="chat">chat</option><option value="responses">responses</option></select>
+                <select id="cfg-api">
+                  <option value="auto">auto</option>
+                  <option value="chat">chat</option>
+                  <option value="responses">responses</option>
+                  <option value="messages">messages</option>
+                </select>
+              </label>
+              <label>Modelos do endpoint:
+                <span class="key-wrap">
+                  <select id="cfg-models"></select>
+                  <button type="button" id="btn-cfg-models" class="icon-btn" title="Load models" aria-label="Load models"><svg class="ic"><use href="#i-reset"/></svg></button>
+                </span>
               </label>
               <label>Headers (JSON):
                 <textarea id="cfg-headers" rows="2" spellcheck="false" placeholder='{"x-tenant":"acme"}'></textarea>
               </label>
             </div>
-            <p class="hint">Aliases: g, j, s, d, x, z, K, c… Full spec: <code>vendor:model:thinking</code>. Keys live in your browser's localStorage.</p>
+            <p class="hint">The field completes with the aliases of the provider. Full spec: <code>vendor:model:thinking</code>. Each provider keeps its own model. Keys live in your browser's localStorage.</p>
           </form>
         </div>
       </div>
@@ -330,6 +344,7 @@
         <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
         <div class="chat-input-row">
           <textarea id="chat-input" rows="1" placeholder="Ask a question or request improvements…" aria-label="Message to the assistant"></textarea>
+          <button id="chat-stop" class="icon-btn big" title="Stop" aria-label="Stop the answer" hidden><svg class="ic"><use href="#i-close"/></svg></button>
           <button id="chat-send" class="primary icon-btn big" title="Send" aria-label="Send message"><svg class="ic"><use href="#i-send"/></svg></button>
         </div>
         <div id="chat-status" class="hint"></div>
@@ -405,9 +420,10 @@
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <div id="modal-root"></div>
 
-<script type="importmap">{"imports":{"@tell-ai/sdk":"./vendor/tell/browser.js"}}</script>
+<script type="importmap">{"imports":{"@tell-ai/sdk":"./vendor/tell/browser.js","@tell-ai/core":"./vendor/tell/core.browser.js"}}</script>
 <script src="vendor/swiftlatex/PdfTeXEngine.js"></script>
 <script type="module" src="vendor/tell/sdk.js"></script>
+<script type="module" src="vendor/tell/core.js"></script>
 <script src="js/prompts.js"></script>
 <script src="js/llm.js"></script>
 <script src="js/store.js"></script>

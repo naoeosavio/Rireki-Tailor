@@ -36,11 +36,11 @@ the files come straight from the `src/pdftex/{formatId}/{name}` mirror.
 | `src/js/chat.js` | **Per-section chat** ("Job assistant"): per-section history, contextual system prompt (job/master/CV_OUT/cover/tex), safe markdown-lite, quick-asks. |
 | `src/js/store.js` | Pure state normalizers — the shape barrier between localStorage/imported JSON and the app (anti-DoS ceilings, id allowlist, corrupt-value stashing). |
 | `src/js/prompts.js` | ATS/cover/tex prompts (identical to the CLI; ATS loads `data/PROMPT_ATS.md`). |
-| `src/js/llm.js` | LLM layer via the **tell-ai sdk** (`TellSDK.tell`): model alias/spec + keys/urls per vendor, legacy config migration, connection test, `chatTell()` (chat mode with `system`/`context`, `exec:false`). |
-| `src/vendor/tell/` | **tell-ai sdk** (v0.3.0) vendored as native ESM with no bundler: `browser.js` (copy of `dist/browser.js`, self-contained ESM build) + `sdk.js` (`export * as TellSDK from "@tell-ai/sdk"` via import map, exposes `window.TellSDK`). MIT. |
+| `src/js/llm.js` | LLM layer via the **tell-ai core runtime** (`TellCore.create_core_runtime`) over the **tell-ai sdk** (`TellSDK.create_ask_ai`): model alias/spec + keys/urls per vendor, legacy config migration, connection test, `chatTell()` (chat mode with `system`/`context`). The core owns the prompt, the no-exec protocol and the tags. When the dev server holds a key in its env, the call goes through the server. |
+| `src/vendor/tell/` | **tell-ai sdk** (v0.4.1) and **tell-ai core** (v0.1.2) vendored as native ESM with no bundler: `browser.js` + `core.browser.js` (copies of the self-contained `dist/browser.js` builds) + `sdk.js` / `core.js` (namespace re-exports via import map, expose `window.TellSDK` / `window.TellCore`). MIT. |
 | `src/css/app.css` | **Dark/light** themes (`data-theme`), design system (buttons, cards, stepper, toasts, modals, sidebar, chat), responsive, `prefers-reduced-motion`. |
 | `src/vendor/swiftlatex/` | Vendored engine. Patches: texlive endpoint → local origin; `ENGINE_PATH` via `document.currentScript`; `compileFormat` returning the fmt bytes (Uint8Array). |
-| `src/scripts/serve.js` | Dev server + kpathsea resolver (`TEX_SUBROOTS` and `TEXMF_DIRS` follow TeXLive's order), `fix_extension` (ids → extensions), `fileid` header, 301 for MISS, mirror into `src/pdftex/`, `POST /api/upload-fmt`. |
+| `src/scripts/serve.js` | Dev server + kpathsea resolver (`TEX_SUBROOTS` and `TEXMF_DIRS` follow TeXLive's order), `fix_extension` (ids → extensions), `fileid` header, 301 for MISS, mirror into `src/pdftex/`, `POST /api/upload-fmt`, `GET /api/llm/config` + `POST /api/llm` (the server holds the key). The static paths use the fail-closed helpers of the core (`canonical_path`), so a symlink inside the tree never reaches the client. |
 | `test/test.html` | Diagnostic harness: loads the engine, compiles `test/CV_ATS.tex`, rebuilds the format. `?autostart=format` / `?autostart=compile`. |
 | `test/store_test.js` | Unit tests for the `store.js` normalizers. |
 | `test/serve_audit.js` / `serve_audit2.js` | Dev-server audit: path traversal, origin/CSRF guard, fmt upload limits, idle timeout. |
@@ -112,20 +112,36 @@ bar, so the work area keeps the space.
 - Indeterminate progress bar + button spinner during LLM generation/compile;
   character counters; copy buttons; stepper with done/active states.
 
-### LLM (tell-ai sdk)
+### LLM (tell-ai core runtime + sdk)
 
-- Generation via `TellSDK.tell` (the CLI's `tell --no-exec` as a function): no-exec system
-  prompt, model by alias or full spec (`j`, `d`, `g`, `openai:gpt-5.6-sol:high`…),
-  `thinking`/`<RUN>` tags stripped, one-shot (no streaming).
+- Generation via the **core runtime** (`TellCore.create_core_runtime`): the core composes the prompt
+  (`Previous context:` + the system prompt), runs the primitive loop, strips the `thinking`/`<RUN>`
+  tags and refuses every command (no-exec). The model port of the app calls the sdk
+  (`TellSDK.create_ask_ai`) or the custom endpoint.
+- Model by alias or full spec (`j`, `d`, `g`, `openai:gpt-5.6-sol:high`…), one-shot (no streaming).
 - **Global config** in Step 1: a grid of 12 vendor cards (openai, anthropic, google, deepseek,
   xai, cerebras, fireworks, moonshotai, openrouter, alibaba, zai, custom). A click shows the
   detail block: model, provider key (with eye toggle), connection test. The `custom` detail
-  adds endpoint URL, API type (`chat`/`responses`), and extra JSON headers; `custom:<model>`
-  calls that endpoint directly (keyless endpoints allowed). Details in `docs/llm-base-url.md`.
-  Everything lives in localStorage.
+  adds endpoint URL, API type (`auto`/`chat`/`responses`/`messages`), the model list of the
+  endpoint (the button asks the endpoint and fills the picker) and extra JSON headers;
+  `custom:<model>` calls that endpoint directly (keyless endpoints allowed). Details in
+  `docs/llm-base-url.md`. Everything lives in localStorage.
+- The model field completes with the **aliases of the sdk** (152 entries) and the hint below
+  shows the resolved spec (`openai · gpt-6.1-sol · medium`). A wrong alias of another provider
+  is named there. Each provider card keeps its own model.
 - Automatic migration of the legacy config (`apiKey`→`keys.openai`, `baseURL`→`urls.openai`).
 - The SDK's IIFE bundle is self-contained (defines its own `process`, no `require()` of node
   builtins) — it loads straight into the browser, no shims.
+- The chat history uses the turn format of the **tell-ai core** (`User:` / `Assistant:`) and the
+  core cuts it with `truncate_context`, so the context never exceeds the limit and never ends
+  in the middle of a turn.
+- **The key on the server** (the dev server / VPS): put `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`,
+  `GOOGLE_API_KEY`, `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, …) in the env of the server and
+  `TELL_MODEL` for the default model. The browser asks `GET /api/llm/config` what the server
+  holds and sends the call to `POST /api/llm` when the browser has no key of its own. The key
+  never reaches the browser, and the call no longer needs CORS. A key in the browser always
+  wins. The server runs the same core runtime, so the answer is the same.
+- **Stop button**: the chat can cancel a pending answer (the cancel token of the core).
 
 ### Sections (per-job workspaces)
 

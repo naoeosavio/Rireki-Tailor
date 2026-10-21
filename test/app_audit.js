@@ -79,6 +79,16 @@ function take_errors() {
   return page_errors.slice();
 }
 
+/* The dev server can hold a key in its env. The tests that need the
+ * no-key path tell the browser that the server holds nothing. */
+async function noServerKey(page) {
+  await page.route('**/api/llm/config', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ enabled: false, model: 'l', vendors: [] }),
+  }));
+}
+
 /* ================================================================== *
  * loadAll(): a single corrupt key must not wipe the others
  * ================================================================== */
@@ -133,6 +143,7 @@ test('load: sections survive a corrupt library key', async (page) => {
  * ================================================================== */
 
 test('load: a section with a non-array chat does not break the app', async (page) => {
+  await noServerKey(page);
   await seed(page, {
     'riki.sections': { bad: section({ name: 'X', chat: 'not-an-array', role: 5, updatedAt: 'nope' }) },
     'riki.active': 'bad',
@@ -242,6 +253,7 @@ test('sections: deleting the last section clears the form and hides the PDF', as
  * ================================================================== */
 
 test('chat: the user message is persisted when the LLM call fails', async (page) => {
+  await noServerKey(page);
   await seed(page, {
     'riki.sections': { s1: section() },
     'riki.active': 's1',
@@ -432,7 +444,9 @@ test('llm: a late answer stays in the section that asked for it', async (page) =
    * between. */
   await page.evaluate(() => {
     window.TellSDK = {
-      tell: () => new Promise((resolve) => setTimeout(() => resolve('CV-GERADO-PARA-A'), 1200)),
+      create_ask_ai: async () => ({
+        ask: () => new Promise((resolve) => setTimeout(() => resolve('CV-GERADO-PARA-A'), 1200)),
+      }),
     };
   });
   await page.click('#btn-gen-cv');
@@ -445,6 +459,232 @@ test('llm: a late answer stays in the section that asked for it', async (page) =
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('riki.sections')));
   assert.strictEqual(stored.s1.cvOut, 'CV-GERADO-PARA-A', 'the answer did not reach the section that asked');
   assert.strictEqual(stored.s2.cvOut, '', 'the answer landed in the other section');
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+/* ================================================================== *
+ * the chat sends the history in the turn format of the core
+ * ================================================================== */
+
+test('llm: the chat sends the history in the turn format of the core', async (page) => {
+  await seed(page, {
+    'riki.config': { model: 'g', keys: { openai: 'sk-test' }, urls: {} },
+    'riki.sections': { s1: section({ name: 'A', role: 'ROLE', master: 'MASTER' }) },
+    'riki.active': 's1',
+  });
+  const core = await page.evaluate(() => typeof (window.TellCore && window.TellCore.truncate_context));
+  assert.strictEqual(core, 'function', 'the core did not load');
+
+  /* The model answers at once. The test reads the prompt of the call. */
+  await page.evaluate(() => {
+    window.__tell_prompt = null;
+    window.TellSDK = {
+      create_ask_ai: async () => ({
+        ask: (message, options) => {
+          window.__tell_prompt = { message: message, system: options.system };
+          return Promise.resolve('OK');
+        },
+      }),
+    };
+  });
+  await page.click('[data-nav="3"]');
+  await page.waitForTimeout(300);
+  await page.fill('#chat-input', 'first question');
+  await page.click('#chat-send');
+  await page.waitForTimeout(500);
+  await page.fill('#chat-input', 'second question');
+  await page.click('#chat-send');
+  await page.waitForTimeout(500);
+
+  const prompt = await page.evaluate(() => window.__tell_prompt);
+  assert.ok(prompt, 'the model was never called');
+  const message = prompt.message || '';
+  assert.ok(message.indexOf('Previous context:') !== -1, 'the context is missing: ' + message.slice(0, 120));
+  assert.ok(message.indexOf('User:\nfirst question') !== -1, 'the user turn is gone: ' + message.slice(0, 160));
+  assert.ok(message.indexOf('Assistant:\nOK') !== -1, 'the assistant turn is gone: ' + message.slice(0, 160));
+  assert.ok(message.indexOf('User:\nsecond question') !== -1, 'the question is gone: ' + message.slice(0, 160));
+  assert.ok(/RirekiTailor/.test(prompt.system || ''), 'the system prompt is missing');
+  assert.ok(message.length <= 24000 + 200, 'the prompt is too long: ' + message.length);
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+/* ================================================================== *
+ * a command of the model never reaches the user
+ * ================================================================== */
+
+test('llm: a command of the model is denied and the answer stays clean', async (page) => {
+  await seed(page, {
+    'riki.config': { model: 'g', keys: { openai: 'sk-test' }, urls: {} },
+    'riki.sections': { s1: section({ name: 'A', role: 'ROLE', master: 'MASTER' }) },
+    'riki.active': 's1',
+  });
+  await page.evaluate(() => {
+    window.TellSDK = {
+      create_ask_ai: async () => ({
+        ask: async () => '<think>the reasoning</think>\nThe answer.\n<RUN>rm -rf /</RUN>',
+      }),
+    };
+  });
+  await page.click('[data-nav="3"]');
+  await page.waitForTimeout(300);
+  await page.fill('#chat-input', 'do something');
+  await page.click('#chat-send');
+  await page.waitForTimeout(800);
+
+  const text = (await page.textContent('#chat-messages')) || '';
+  assert.ok(text.indexOf('The answer.') !== -1, 'the answer is missing: ' + text.slice(0, 160));
+  assert.ok(text.indexOf('<think>') === -1, 'the thinking of the model survived');
+  assert.ok(text.indexOf('<RUN>') === -1, 'the command tag survived');
+  assert.ok(text.indexOf('rm -rf') === -1, 'the command survived');
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+/* ================================================================== *
+ * the model picker of the setup block
+ * ================================================================== */
+
+test('config: the aliases of the sdk and the spec of the model show up', async (page) => {
+  await seed(page, {
+    'riki.config': { model: 'openai:g', keys: { openai: 'sk-test' }, urls: {} },
+    'riki.sections': { s1: section({ name: 'A' }) },
+    'riki.active': 's1',
+  });
+  const aliases = await page.$$eval('#cfg-model-list option', (o) => o.map((x) => x.value));
+  assert.ok(aliases.length > 0, 'the model list is empty');
+  assert.ok(aliases.indexOf('g') !== -1, 'the alias g is missing: ' + aliases.slice(0, 8).join(','));
+  assert.ok(aliases.indexOf('s') === -1, 'the list holds an alias of another provider');
+
+  const spec = (await page.textContent('#cfg-model-spec')) || '';
+  assert.ok(/gpt-6\.1-sol/.test(spec), 'the spec of the model is wrong: ' + spec);
+
+  await page.fill('#cfg-model', 'gpt-4o');
+  await page.waitForTimeout(300);
+  const spec2 = (await page.textContent('#cfg-model-spec')) || '';
+  assert.ok(/gpt-4o/.test(spec2), 'the spec did not follow the model: ' + spec2);
+
+  await page.click('[data-vendor="anthropic"]');
+  await page.waitForTimeout(300);
+  await page.fill('#cfg-model', 'claude-x');
+  await page.waitForTimeout(300);
+  await page.click('[data-vendor="openai"]');
+  await page.waitForTimeout(300);
+  assert.strictEqual(await page.inputValue('#cfg-model'), 'gpt-4o', 'the model of the provider was lost');
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+test('config: an alias of another provider is named in the hint', async (page) => {
+  await seed(page, {
+    'riki.config': { model: 'openai:g', keys: { openai: 'sk-test' }, urls: {} },
+    'riki.sections': { s1: section({ name: 'A' }) },
+    'riki.active': 's1',
+  });
+  /* The alias j belongs to google. The provider openai is selected. */
+  await page.fill('#cfg-model', 'j');
+  await page.waitForTimeout(300);
+  const hint = (await page.textContent('#cfg-model-spec')) || '';
+  assert.ok(/google/.test(hint), 'the hint does not name the provider of the alias: ' + hint);
+  const bad = await page.$eval('#cfg-model-spec', (el) => el.classList.contains('bad'));
+  assert.ok(bad, 'the hint does not mark the wrong alias');
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+test('config: the model list of the custom endpoint fills the picker', async (page) => {
+  await seed(page, {
+    'riki.config': {
+      model: 'custom:my-model',
+      keys: { custom: 'ck-test' },
+      urls: { custom: 'https://api.example.com/v1' },
+    },
+    'riki.sections': { s1: section({ name: 'A' }) },
+    'riki.active': 's1',
+  });
+  /* The sdk asks the endpoint for the model list. The endpoint answers
+   * with the shape of the openai api. */
+  await page.evaluate(() => {
+    const real = window.fetch;
+    window.fetch = (url, opts) => {
+      if (String(url).indexOf('api.example.com') === -1) return real(url, opts);
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ data: [{ id: 'model-a' }, { id: 'gpt-5.4-mini' }] }),
+        text: () => Promise.resolve(''),
+      });
+    };
+  });
+  await page.click('[data-vendor="custom"]');
+  await page.waitForTimeout(300);
+  await page.click('#btn-cfg-models');
+  await page.waitForTimeout(600);
+  const options = await page.$$eval('#cfg-models option', (o) => o.map((x) => x.value));
+  assert.ok(options.indexOf('model-a') !== -1, 'the model list is empty: ' + options.join(','));
+  await page.selectOption('#cfg-models', 'gpt-5.4-mini');
+  await page.waitForTimeout(400);
+  assert.strictEqual(await page.inputValue('#cfg-model'), 'gpt-5.4-mini', 'the model field was not filled');
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('riki.config')).model);
+  assert.strictEqual(stored, 'custom:gpt-5.4-mini', 'the model was not saved: ' + stored);
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+/* ================================================================== *
+ * the key on the server and the stop button
+ * ================================================================== */
+
+test('llm: the server holds the key and the browser sends the call to it', async (page) => {
+  /* The routes come before the seed: the browser asks the server for the
+   * config when the page starts. */
+  await page.route('**/api/llm/config', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ enabled: true, model: 'l', vendors: ['openai'] }),
+  }));
+  await page.route('**/api/llm', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ text: 'SERVER ANSWER', status: 'completed', commands: [] }),
+  }));
+  await seed(page, {
+    'riki.config': { model: 'openai:g', keys: {}, urls: {} },
+    'riki.sections': { s1: section({ name: 'A', role: 'ROLE', master: 'MASTER' }) },
+    'riki.active': 's1',
+  });
+  await page.click('[data-nav="3"]');
+  await page.waitForTimeout(300);
+  await page.fill('#chat-input', 'hello server');
+  await page.click('#chat-send');
+  await page.waitForTimeout(800);
+  const text = (await page.textContent('#chat-messages')) || '';
+  assert.ok(text.indexOf('SERVER ANSWER') !== -1, 'the answer of the server did not arrive: ' + text.slice(0, 120));
+  assert.ok(text.indexOf('API key') === -1, 'the app asked for a key that the server holds');
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+test('llm: the stop button drops the pending answer', async (page) => {
+  await seed(page, {
+    'riki.config': { model: 'openai:g', keys: { openai: 'sk-test' }, urls: {} },
+    'riki.sections': { s1: section({ name: 'A', role: 'ROLE', master: 'MASTER' }) },
+    'riki.active': 's1',
+  });
+  await page.evaluate(() => {
+    window.TellSDK = {
+      create_ask_ai: async () => ({
+        ask: () => new Promise((resolve) => setTimeout(() => resolve('TOO LATE'), 1500)),
+      }),
+    };
+  });
+  await page.click('[data-nav="3"]');
+  await page.waitForTimeout(300);
+  await page.fill('#chat-input', 'stop me');
+  await page.click('#chat-send');
+  await page.waitForTimeout(300);
+  const shown = await page.$eval('#chat-stop', (el) => !el.hidden);
+  assert.ok(shown, 'the stop button is not shown while the answer runs');
+  await page.click('#chat-stop');
+  await page.waitForTimeout(2200);
+  const text = (await page.textContent('#chat-messages')) || '';
+  assert.ok(text.indexOf('TOO LATE') === -1, 'the cancelled answer landed: ' + text.slice(0, 120));
+  const hidden = await page.$eval('#chat-stop', (el) => el.hidden);
+  assert.ok(hidden, 'the stop button stayed visible after the answer');
   assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
 });
 

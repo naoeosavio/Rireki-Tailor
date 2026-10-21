@@ -49,6 +49,7 @@
     model: 'j',
     keys: {},
     urls: {},
+    models: {},
   };
   let sections = Object.create(null);
   let library = { masters: [], templates: [] };
@@ -185,7 +186,7 @@
   }
 
   function loadAll() {
-    config = normalizeConfig(loadJsonKey(LS_CONFIG, {}), LLM_VENDORS);
+    config = normalizeConfig(loadJsonKey(LS_CONFIG, {}), LLM_VENDORS, defaultModel());
     backfillDefaultUrls(config);
     /* The load has a ceiling: a state with 20000 sections freezes every
      * render and repeats the freeze on every load. */
@@ -985,6 +986,9 @@
   function exportSections() {
     /* Sanitized config: model/urls are useful for restoring; keys never leave here */
     const safeConfig = { model: config.model, urls: Object.assign({}, config.urls) };
+    if (config.models && Object.keys(config.models).length) {
+      safeConfig.models = Object.assign({}, config.models);
+    }
     if (config.customApi) safeConfig.customApi = config.customApi;
     const payload = { exportedAt: now(), config: safeConfig, library, sections };
     download('riki-secoes-' + Date.now() + '.json', JSON.stringify(payload, null, 2), 'application/json');
@@ -1013,8 +1017,9 @@
         /* The backup holds no API keys. The keys and the urls of the
          * browser stay: an import must not send the key of the user to the
          * endpoint of another file. */
-        const imported = normalizeConfig(data.config, LLM_VENDORS);
+        const imported = normalizeConfig(data.config, LLM_VENDORS, defaultModel());
         if (imported.model) config.model = imported.model;
+        if (imported.models) config.models = imported.models;
       }
       if (data.library && typeof data.library === 'object' && !Array.isArray(data.library)) {
         [['masters', 'master'], ['templates', 'template']].forEach(([listKey, kind]) => {
@@ -1714,6 +1719,63 @@
     return { vendor: m[1].toLowerCase(), rest: m[2] };
   }
 
+  /* The alias table of the sdk. The app never keeps its own list: the sdk
+   * owns the aliases and the spec of every alias. */
+  let aliasTableCache = null;
+  function aliasTable() {
+    if (aliasTableCache) return aliasTableCache;
+    aliasTableCache = [];
+    const sdk = typeof window !== 'undefined' ? window.TellSDK : null;
+    if (!sdk || !sdk.MODELS || typeof sdk.resolve_model_spec !== 'function') return aliasTableCache;
+    Object.keys(sdk.MODELS).forEach((alias) => {
+      let spec = null;
+      try {
+        spec = sdk.resolve_model_spec(alias);
+      } catch (_) {
+        return;
+      }
+      aliasTableCache.push({ alias: alias, vendor: spec.vendor, model: spec.model, thinking: spec.thinking });
+    });
+    return aliasTableCache;
+  }
+
+  /* The list of the model field holds the aliases of the chosen provider. */
+  function renderModelList() {
+    const list = $('cfg-model-list');
+    if (!list) return;
+    list.innerHTML = '';
+    const vendor = selectedVendor;
+    aliasTable().forEach((entry) => {
+      if (vendor && entry.vendor !== vendor) return;
+      const option = document.createElement('option');
+      option.value = entry.alias;
+      option.label = entry.model + ' · ' + entry.thinking;
+      list.appendChild(option);
+    });
+  }
+
+  /* The spec of the chosen model. The sdk resolves the alias and the full
+   * spec, and it names the model that it does not know. */
+  function renderModelSpec() {
+    const el = $('cfg-model-spec');
+    if (!el) return;
+    const model = (config.model || '').trim();
+    const sdk = typeof window !== 'undefined' ? window.TellSDK : null;
+    if (!model || !sdk || typeof sdk.resolve_model_spec !== 'function') {
+      el.textContent = '';
+      el.classList.remove('bad');
+      return;
+    }
+    try {
+      const spec = sdk.resolve_model_spec(model);
+      el.textContent = spec.vendor + ' · ' + spec.model + ' · ' + spec.thinking;
+      el.classList.remove('bad');
+    } catch (err) {
+      el.textContent = err && err.message ? err.message : 'Unknown model';
+      el.classList.add('bad');
+    }
+  }
+
   function renderVendorCards() {
     const grid = $('vendor-grid');
     if (!grid) return;
@@ -1762,7 +1824,10 @@
     if (hint) hint.hidden = true;
     if (form) form.hidden = false;
     const parsed = vendorOfModel(config.model);
-    $('cfg-model').value = parsed && parsed.vendor === v ? parsed.rest : '';
+    /* The active model of the provider wins. Otherwise the model that the
+     * user chose for this provider before comes back. */
+    const remembered = config.models && config.models[v] ? config.models[v] : '';
+    $('cfg-model').value = parsed && parsed.vendor === v ? parsed.rest : remembered;
     $('cfg-key').value = (config.keys && config.keys[v]) || '';
     $('cfg-key').type = 'password';
     const eye = $('btn-key-eye');
@@ -1771,9 +1836,11 @@
     if (extra) extra.hidden = v !== 'custom';
     if (v === 'custom') {
       $('cfg-url').value = (config.urls && config.urls.custom) || '';
-      $('cfg-api').value = config.customApi === 'responses' ? 'responses' : 'chat';
+      $('cfg-api').value = config.customApi || 'auto';
       $('cfg-headers').value = config.customHeaders || '';
     }
+    renderModelList();
+    renderModelSpec();
   }
 
   function fillConfig() {
@@ -1786,14 +1853,39 @@
 
   function bindConfig() {
     renderVendorCards();
+    /* The server can hold the key. The hint says so, so the user does not
+     * paste a key that the server already has. */
+    serverConfig().then((info) => {
+      const el = $('cfg-server-hint');
+      if (!el) return;
+      if (!info || !info.vendors || !info.vendors.length) {
+        el.hidden = true;
+        return;
+      }
+      el.hidden = false;
+      el.textContent = 'The server holds the key: ' + info.vendors.join(', ')
+        + '. The call goes through the server.';
+    });
     const modelEl = $('cfg-model');
     if (modelEl) modelEl.addEventListener('input', () => {
       const name = modelEl.value.trim();
-      if (name && selectedVendor) {
+      if (!name) return;
+      const parsed = vendorOfModel(name);
+      if (parsed) {
+        /* A full spec: the user typed the vendor too, so the app keeps it. */
+        config.model = name;
+        if (!config.models) config.models = {};
+        config.models[parsed.vendor] = parsed.rest;
+      } else if (selectedVendor) {
         config.model = selectedVendor + ':' + name;
-        markSetupDone();
-        saveAllDebounced();
+        if (!config.models) config.models = {};
+        config.models[selectedVendor] = name;
+      } else {
+        return;
       }
+      markSetupDone();
+      saveAllDebounced();
+      renderModelSpec();
     });
     const keyEl = $('cfg-key');
     if (keyEl) keyEl.addEventListener('input', () => {
@@ -1819,8 +1911,40 @@
     });
     const apiEl = $('cfg-api');
     if (apiEl) apiEl.addEventListener('change', () => {
-      config.customApi = apiEl.value === 'responses' ? 'responses' : 'chat';
+      config.customApi = apiEl.value;
       saveAllDebounced();
+    });
+    const modelsEl = $('cfg-models');
+    if (modelsEl) modelsEl.addEventListener('change', () => {
+      const id = modelsEl.value;
+      if (!id) return;
+      const input = $('cfg-model');
+      input.value = id;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const modelsBtn = $('btn-cfg-models');
+    if (modelsBtn) modelsBtn.addEventListener('click', async () => {
+      modelsBtn.disabled = true;
+      try {
+        const list = await customModels(config);
+        const select = $('cfg-models');
+        select.innerHTML = '';
+        const head = document.createElement('option');
+        head.value = '';
+        head.textContent = list.length ? list.length + ' models' : 'no models';
+        select.appendChild(head);
+        list.forEach((item) => {
+          const option = document.createElement('option');
+          option.value = item.id;
+          option.textContent = item.id + ' (' + item.wire + ')';
+          select.appendChild(option);
+        });
+        toast(list.length + ' models loaded', 'ok');
+      } catch (err) {
+        toast('Model list failed: ' + (err && err.message ? err.message : err), 'err', 6000);
+      } finally {
+        modelsBtn.disabled = false;
+      }
     });
     const headersEl = $('cfg-headers');
     if (headersEl) headersEl.addEventListener('input', () => {

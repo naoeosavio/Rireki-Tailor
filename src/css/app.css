@@ -544,8 +544,10 @@ textarea::placeholder, input::placeholder { color: color-mix(in srgb, var(--mute
 }
 #cfg-panel textarea { min-height: 0; font-size: .85em; }
 #cfg-panel .hint { margin-top: 10px; }
+#cfg-panel .hint.bad { color: var(--err); }
 .key-wrap { display: flex; gap: 6px; align-items: center; }
 .key-wrap input { flex: 1; min-width: 0; }
+.key-wrap select { flex: 1; min-width: 0; }
 
 /* ---------- chat ---------- */
 .chat-card { min-height: 560px; }
