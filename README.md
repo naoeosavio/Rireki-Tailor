@@ -154,6 +154,25 @@ NODE_PATH=$(npm root -g) node test/smoke.js    # UI: sections, persistence, expo
 NODE_PATH=$(npm root -g) node test/e2e.js      # full compile → assert %PDF-1.5
 ```
 
+### Test suites
+
+| Command | What it covers |
+|---|---|
+| `npm run test:all` | Every suite below, plus the smoke test and the browser audit. |
+| `npm run test:store` | The shape barrier of the state. |
+| `npm run test:fixtex` | The LaTeX helpers and the wiring of the steps. |
+| `npm run test:fuzz` | The fuzz, differential, and reduction tests of the browser packages. |
+| `npm run test:serve` | The routes of the dev server. |
+| `npm run test:serve2` | The idle path of the format upload. |
+| `npm run test:servefuzz` | The fuzz tests of the dev server: paths, methods, headers, bodies. |
+| `npm run test:updater` | The atomic update of the vendored engine. |
+| `npm run test:app` | The browser audit of the app and the chat. |
+| `npm run test:llmreal` | A real model through the `tell` CLI. The suite skips itself when the CLI or the network is not there. |
+
+The fuzz suite has a fixed seed. A failure always comes back with the smallest case that still
+fails. The real model test uses `openrouter:minimax/minimax-m3.1-flash:free` and measures how
+often a small model returns a usable answer.
+
 - **Compilation is fast (~2 s):** the `src/pdftex/` mirror plus in-memory indexes eliminate
   the TeXMF tree walks; only the first compilation on a cold server is slow (walks ~20 min).
   On static hosting (mirror only), it is instant.

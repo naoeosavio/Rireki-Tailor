@@ -415,6 +415,116 @@ test('upload: an oversized file is refused with a warning', async (page) => {
   }
 });
 
+/* ================================================================== *
+ * a late model answer must not land in the new section
+ * ================================================================== */
+
+test('llm: a late answer stays in the section that asked for it', async (page) => {
+  await seed(page, {
+    'riki.config': { model: 'g', keys: { openai: 'sk-test' }, urls: {} },
+    'riki.sections': {
+      s1: section({ name: 'A', role: 'ROLE', master: 'MASTER' }),
+      s2: section({ name: 'B', role: 'ROLE', master: 'MASTER' }),
+    },
+    'riki.active': 's1',
+  });
+  /* The model answers after 1200 ms. The user changes the section in
+   * between. */
+  await page.evaluate(() => {
+    window.TellSDK = {
+      tell: () => new Promise((resolve) => setTimeout(() => resolve('CV-GERADO-PARA-A'), 1200)),
+    };
+  });
+  await page.click('#btn-gen-cv');
+  await page.waitForTimeout(300);
+  await page.selectOption('#section-select', 's2');
+  await page.waitForTimeout(2000);
+
+  const field = await page.inputValue('#cvOut');
+  assert.strictEqual(field, '', 'the answer of the other section landed in the form');
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('riki.sections')));
+  assert.strictEqual(stored.s1.cvOut, 'CV-GERADO-PARA-A', 'the answer did not reach the section that asked');
+  assert.strictEqual(stored.s2.cvOut, '', 'the answer landed in the other section');
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+/* ================================================================== *
+ * a stalled data file must not kill the app
+ * ================================================================== */
+
+test('load: a data file that never answers does not stop the app', async (page) => {
+  await page.route('**/data/CV_MASTER_EN.md', () => { /* never answers */ });
+  await page.goto(BASE + '/index.html', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(2500);
+
+  const status = (await page.textContent('#status')) || '';
+  assert.ok(status.trim().length > 0, 'the status never came — init died early');
+  assert.ok(!/loading/i.test(status), 'the app is still loading: ' + status);
+
+  /* The handlers are wired: the button answers. */
+  await page.click('#btn-new-section');
+  await page.waitForSelector('.modal-foot button', { timeout: 5000 });
+  await page.click('.modal-foot button:not(.primary)');
+
+  /* The typed text is saved even though the seed never came. */
+  await page.fill('#role', 'ROLE-DURANTE-O-BLOQUEIO');
+  await page.waitForTimeout(700);
+  const stored = await page.evaluate(() => JSON.stringify(localStorage.getItem('riki.sections')));
+  assert.ok(stored.indexOf('ROLE-DURANTE-O-BLOQUEIO') !== -1, 'the typed text was lost');
+  await page.unroute('**/data/CV_MASTER_EN.md');
+});
+
+/* ================================================================== *
+ * the active section falls back to an existing section
+ * ================================================================== */
+
+test('load: a missing active key selects the first section', async (page) => {
+  await seed(page, {
+    'riki.sections': { s1: section({ name: 'A' }), s2: section({ name: 'B' }) },
+  });
+  const state = await page.evaluate(() => ({
+    selected: document.getElementById('section-select').selectedIndex,
+    value: document.getElementById('section-select').value,
+    empty: document.getElementById('step1-empty').style.display,
+  }));
+  assert.ok(state.selected >= 0, 'no section is selected: ' + JSON.stringify(state));
+  assert.ok(state.value !== '', 'the select has no value');
+  assert.notStrictEqual(state.empty, 'block', 'the banner says there is no section');
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+/* ================================================================== *
+ * the load path has a ceiling
+ * ================================================================== */
+
+test('load: a state with many sections is capped and the app stays fast', async (page) => {
+  const many = {};
+  for (let i = 0; i < 2500; i++) many['s' + i] = section({ name: 'S' + i });
+  await seed(page, { 'riki.sections': many, 'riki.active': 's0' });
+  const started = Date.now();
+  const count = await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('riki.sections'))).length);
+  const elapsed = Date.now() - started;
+  assert.ok(count <= 2000, 'the ceiling was not applied: ' + count);
+  assert.ok(elapsed < 15000, 'the state is too slow: ' + elapsed + ' ms');
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+/* ================================================================== *
+ * source tripwires of the app
+ * ================================================================== */
+
+test('source: the app keeps the guards of the fixes', () => {
+  const src = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+  assert.ok(src.includes('if (active() !== s)'), 'the late answer guard is gone');
+  assert.ok(src.includes('let compileBusy = false'), 'the compile guard is gone');
+  assert.ok(src.includes('if (compileBusy)'), 'the compile guard is not used');
+  assert.ok(src.includes('showPdf(res.pdf, sectionId)'), 'the PDF does not carry its section');
+  assert.ok(src.includes('STORE_MAX_SECTIONS_LOAD'), 'the load ceiling is gone');
+  assert.ok(src.includes('FETCH_TIMEOUT_MS'), 'the fetch timeout is gone');
+  assert.ok(src.includes('await seedDefaults()'), 'the seed still blocks the start');
+  assert.ok(!src.includes('Object.assign(config, normalizeConfig('), 'the import replaces the config again');
+});
+
 /* ================================================================== */
 
 (async () => {
