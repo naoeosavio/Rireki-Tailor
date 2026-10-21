@@ -61,10 +61,13 @@ function lan_addresses() {
     .map((i) => i.address);
 }
 
-function start_server(extra_args) {
+function start_server(extra_args, env) {
   return new Promise((resolve, reject) => {
     const args = ['--port', '0', '--no-mirror', '--fmt-target', fmt_target].concat(extra_args || []);
-    child = spawn(process.execPath, [SERVE].concat(args), { stdio: ['ignore', 'pipe', 'pipe'] });
+    child = spawn(process.execPath, [SERVE].concat(args), {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: env || process.env,
+    });
     let out = '';
     const timer = setTimeout(() => reject(new Error('server did not start: ' + out)), 10000);
     child.stdout.on('data', (c) => {
@@ -170,6 +173,23 @@ test('static: malformed percent-escape answers 400, not 500', async (port) => {
 test('static: NUL byte in path is rejected', async (port) => {
   const res = await get(port, '/index.html%00.png');
   assert.ok(res.status === 400 || res.status === 404, 'expected 4xx, got ' + res.status);
+});
+
+test('static: a symlink inside the tree never reaches the client', async (port) => {
+  /* The lexical check does not see a symlink. The core resolves the real
+   * path and fails closed. */
+  const link = path.resolve(__dirname, '..', 'src', '.serve-audit-link');
+  const target = path.join(os.tmpdir(), 'riki-audit-canary-' + process.pid + '.txt');
+  fs.writeFileSync(target, 'canary-of-the-audit');
+  try {
+    fs.symlinkSync(target, link);
+    const res = await get(port, '/.serve-audit-link');
+    assert.ok(res.status === 403 || res.status === 404, 'expected 403, got ' + res.status);
+    assert.ok(!res.body.toString('utf8').includes('canary'), 'the symlink leaked the file outside the tree');
+  } finally {
+    try { fs.unlinkSync(link); } catch (_) { /* best effort */ }
+    try { fs.unlinkSync(target); } catch (_) { /* best effort */ }
+  }
 });
 
 /* ================================================================== *
@@ -341,6 +361,66 @@ const wildcard_tests = [
   },
 ];
 
+/* ================================================================== *
+ * the key on the server
+ * ================================================================== */
+
+/* The env names of the vendors. The core owns the list; the test clears
+ * the ones of the machine so the run does not depend on it. */
+const VENDOR_KEY_ENV = [
+  'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_API_KEY',
+  'XAI_API_KEY', 'DEEPSEEK_API_KEY', 'CEREBRAS_API_KEY', 'MOONSHOTAI_API_KEY',
+  'OPENROUTER_API_KEY', 'ALIBABA_API_KEY', 'ZHIPU_API_KEY', 'META_API_KEY',
+  'XIAOMI_API_KEY',
+];
+
+function env_without_keys() {
+  const env = Object.assign({}, process.env);
+  VENDOR_KEY_ENV.forEach((name) => { env[name] = ''; });
+  delete env.TELL_MODEL;
+  return env;
+}
+
+const nokey_tests = [
+  {
+    name: 'llm: a server without a key reports no key',
+    fn: async (port) => {
+      const res = await get(port, '/api/llm/config');
+      assert.strictEqual(res.status, 200, 'expected 200, got ' + res.status);
+      const data = JSON.parse(res.body.toString('utf8'));
+      assert.strictEqual(data.enabled, false, 'the server claims a key: ' + res.body.toString('utf8'));
+      assert.deepStrictEqual(data.vendors, [], 'the server lists a vendor without a key');
+    },
+  },
+  {
+    name: 'llm: a call without a key answers 503',
+    fn: async (port) => {
+      const body = Buffer.from(JSON.stringify({ message: 'hi' }));
+      const res = await post(port, '/api/llm', body, { 'Content-Type': 'application/json' });
+      assert.strictEqual(res.status, 503, 'expected 503, got ' + res.status + ' ' + res.body.toString('utf8').slice(0, 120));
+    },
+  },
+  {
+    name: 'llm: a cross-origin call is refused',
+    fn: async (port) => {
+      const body = Buffer.from(JSON.stringify({ message: 'hi' }));
+      const res = await post(port, '/api/llm', body, {
+        'Content-Type': 'application/json',
+        Origin: 'https://evil.example',
+      });
+      assert.strictEqual(res.status, 403, 'expected 403, got ' + res.status);
+    },
+  },
+  {
+    name: 'llm: a call without a message answers 400',
+    fn: async (port) => {
+      const body = Buffer.from(JSON.stringify({ model: 'openai:g' }));
+      const res = await post(port, '/api/llm', body, { 'Content-Type': 'application/json' });
+      assert.strictEqual(res.status, 400, 'expected 400, got ' + res.status);
+    },
+  },
+];
+
 /* ================================================================== */
 
 async function run(tests_to_run) {
@@ -375,6 +455,15 @@ async function run(tests_to_run) {
     await run(wildcard_tests);
   } catch (err) {
     report_fail(wildcard_tests[0].name, err);
+  }
+
+  stop_server();
+  try {
+    current_info = await start_server([], env_without_keys());
+    current_port = port_of(current_info.address);
+    await run(nokey_tests);
+  } catch (err) {
+    report_fail(nokey_tests[0].name, err);
   }
 
   stop_server();

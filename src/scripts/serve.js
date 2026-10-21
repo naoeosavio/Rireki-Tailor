@@ -19,6 +19,8 @@ const http = require('http');
 const dns = require('dns');
 const fs = require('fs');
 const path = require('path');
+/* The core owns the fail-closed paths and the mapping of the env. */
+const core = require('@tell-ai/core');
 
 const WEB_ROOT = path.resolve(__dirname, '..');
 const TEST_ROOT = path.resolve(WEB_ROOT, '..', 'test');
@@ -52,6 +54,12 @@ const HOST = argOf('--host', '127.0.0.1');
 const TEXMF = path.resolve(argOf('--texmf', '/usr/share/texlive/texmf-dist'));
 const FMT_TARGET = path.resolve(
   argOf('--fmt-target', path.join(MIRROR_ROOT, '10', 'swiftlatexpdftex.fmt'))
+);
+/* The upload writes a file. The core owns the fail-closed paths: a target
+ * that touches a symlink is refused before anything is written. */
+const FMT_CANONICAL = core.canonical_write_path(
+  path.dirname(FMT_TARGET),
+  path.basename(FMT_TARGET)
 );
 /* kpathsea order (Debian texmf.cnf): TEXMFSYSVAR (/var/lib/texmf), TEXMFDEBIAN
  * (/usr/share/texmf), TEXMFDIST. */
@@ -356,17 +364,30 @@ function sendStatic(req, res, urlPath) {
     res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Forbidden');
     return;
   }
-  fs.stat(abs, (err, st) => {
+  /* The lexical check above does not see a symlink. The core resolves the
+   * real path and fails closed: a link inside the tree that points outside
+   * never reaches the client. */
+  const real = core.canonical_path(base, relToBase.replace(/^\/+/, ''));
+  if (!real) {
+    /* null means a missing file or a path that touches a symlink. */
+    if (!fs.existsSync(abs)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
+      return;
+    }
+    res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Forbidden');
+    return;
+  }
+  fs.stat(real, (err, st) => {
     if (err || !st.isFile()) {
       res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
       return;
     }
     res.writeHead(200, {
-      'Content-Type': MIME[path.extname(abs)] || 'application/octet-stream',
+      'Content-Type': MIME[path.extname(real)] || 'application/octet-stream',
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-store',
     });
-    pipeFile(res, abs);
+    pipeFile(res, real);
   });
 }
 
@@ -566,6 +587,159 @@ async function handleLlmForward(req, res) {
   req.on('error', () => reject(500, 'Request failed'));
 }
 
+/* ------------------------------------------------------------------ *
+ * the server holds the key
+ *
+ * The core owns the mapping of the env: the vendor keys and the base
+ * urls. The browser asks the server for the config and sends the call
+ * to the server when the key lives here. The endpoint calls only the
+ * vendors of the env, so it is not an open proxy.
+ * ------------------------------------------------------------------ */
+
+const LLM_CALL_MAX_BYTES = 1024 * 1024;
+
+/* The config of the sdk from the env. The keys never reach the browser. */
+function serverSdkConfig() {
+  try {
+    return core.build_sdk_config_from_env(process.env) || { keys: {}, urls: {} };
+  } catch (_) {
+    return { keys: {}, urls: {} };
+  }
+}
+
+function serverVendors() {
+  const keys = serverSdkConfig().keys || {};
+  return Object.keys(keys).filter((v) => typeof keys[v] === 'string' && keys[v]);
+}
+
+function serverModel() {
+  const env = core.load_env_layer(process.env) || {};
+  return env.model || core.HOST_DEFAULT_MODEL.web;
+}
+
+function readRequestBody(req, max) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > max) {
+        reject(new Error('the request is too large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+async function handleLlmConfig(req, res) {
+  const vendors = serverVendors();
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({
+    enabled: vendors.length > 0,
+    model: serverModel(),
+    vendors: vendors,
+  }));
+}
+
+/* The runtime of the core runs on the server too. The browser and the
+ * server share the same code, so the answer is the same. */
+async function runServerLlm(model, message, system) {
+  const sdk = require('@tell-ai/sdk');
+  const cfg = serverSdkConfig();
+  const coreConfig = core.resolve_core_config({
+    host: 'web',
+    flag: { model: model, exec_enabled: false },
+  });
+  const runtime = core.create_core_runtime({
+    config: coreConfig,
+    model: {
+      ask: async (prompt, options) => {
+        const ai = await sdk.create_ask_ai(coreConfig.model, { keys: cfg.keys, urls: cfg.urls });
+        return await ai.ask(prompt, { system: options.system || '', stream: false });
+      },
+    },
+    platform: 'web server',
+    system: system || undefined,
+  });
+  return await runtime.run(message);
+}
+
+async function handleLlmCall(req, res) {
+  if (req.method !== 'POST') {
+    await drainRequest(req);
+    res.writeHead(405, { Allow: 'POST' }).end();
+    return;
+  }
+  if (!(await isSameOrigin(req))) {
+    await drainRequest(req);
+    res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Origin not allowed');
+    return;
+  }
+  const vendors = serverVendors();
+  let raw = '';
+  try {
+    raw = await readRequestBody(req, LLM_CALL_MAX_BYTES);
+  } catch (err) {
+    res.writeHead(413, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'The request is too large.' }));
+    return;
+  }
+  let payload = null;
+  try {
+    payload = JSON.parse(raw);
+  } catch (_) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Bad JSON' }));
+    return;
+  }
+  const message = payload && typeof payload.message === 'string' ? payload.message : '';
+  const system = payload && typeof payload.system === 'string' ? payload.system : '';
+  const model = payload && typeof payload.model === 'string' && payload.model
+    ? payload.model
+    : serverModel();
+  if (!message) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'No message' }));
+    return;
+  }
+  /* The caps of the core own the size of the payload. */
+  if (message.length > core.PAYLOAD_MAX_CONTENT_CHARS) {
+    res.writeHead(413, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'The message is too long.' }));
+    return;
+  }
+  if (system.length > core.PAYLOAD_MAX_SYSTEM_CHARS) {
+    res.writeHead(413, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'The system prompt is too long.' }));
+    return;
+  }
+  if (!vendors.length) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'The server holds no API key.' }));
+    return;
+  }
+  try {
+    const result = await runServerLlm(model, message, system);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      text: result.text,
+      status: result.status,
+      commands: result.commands,
+    }));
+  } catch (err) {
+    const message2 = err && err.message ? err.message : 'The model call failed.';
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: message2 }));
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * http server
+ * ------------------------------------------------------------------ */
 async function handleFmtUpload(req, res) {
   if (req.method !== 'POST') {
     await drainRequest(req);
@@ -575,6 +749,11 @@ async function handleFmtUpload(req, res) {
   if (!(await isSameOrigin(req))) {
     await drainRequest(req);
     res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Origin not allowed');
+    return;
+  }
+  if (!FMT_CANONICAL) {
+    await drainRequest(req);
+    res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Upload target not allowed');
     return;
   }
   if (fmtUploadBusy) {
@@ -778,6 +957,16 @@ async function handle(req, res) {
 
   if (url.pathname === '/api/llm-forward') {
     await handleLlmForward(req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/llm/config') {
+    await handleLlmConfig(req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/llm') {
+    await handleLlmCall(req, res);
     return;
   }
 
