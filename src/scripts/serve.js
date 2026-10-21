@@ -16,6 +16,7 @@
  */
 
 const http = require('http');
+const dns = require('dns');
 const fs = require('fs');
 const path = require('path');
 
@@ -138,40 +139,64 @@ function rootsForFormat(id) {
 /* ------------------------------------------------------------------ *
  * basename index (lazy per-root, memoized)
  * ------------------------------------------------------------------ */
-const dirCache = new Map(); // root -> { name -> absPath | null }
+const dirCache = new Map(); // root -> Promise<Map>
 
-function buildIndex(rootRel) {
+/* The tree has more than 100000 files. The sweep runs with the async API:
+ * the sync version blocked the event loop for 10 seconds, and every other
+ * request of the server waited behind it. */
+async function buildIndex(rootRel) {
   if (dirCache.has(rootRel)) return dirCache.get(rootRel);
-  const index = new Map();
-  for (const texmfDir of TEXMF_DIRS) {
-    const rootAbs = path.join(texmfDir, rootRel);
-    if (!fs.existsSync(rootAbs)) continue;
-    const stack = [rootAbs];
-    while (stack.length) {
-      const dir = stack.pop();
-      let entries;
-      try {
-        entries = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
-      } catch {
-        continue;
-      }
-      for (const e of entries) {
-        const full = path.join(dir, e.name);
-        if (e.isDirectory() && !e.isSymbolicLink()) stack.push(full);
-        else if ((e.isFile() || e.isSymbolicLink()) && !index.has(e.name)) index.set(e.name, full);
+  const promise = (async () => {
+    const index = new Map();
+    for (const texmfDir of TEXMF_DIRS) {
+      const rootAbs = path.join(texmfDir, rootRel);
+      if (!fs.existsSync(rootAbs)) continue;
+      const stack = [rootAbs];
+      while (stack.length) {
+        const dir = stack.pop();
+        let entries;
+        try {
+          entries = await fs.promises.readdir(dir, { withFileTypes: true });
+        } catch {
+          continue;
+        }
+        entries.sort((a, b) => (a.name < b.name ? -1 : 1));
+        for (const e of entries) {
+          const full = path.join(dir, e.name);
+          if (e.isDirectory() && !e.isSymbolicLink()) stack.push(full);
+          else if ((e.isFile() || e.isSymbolicLink()) && !index.has(e.name)) index.set(e.name, full);
+        }
       }
     }
-  }
-  dirCache.set(rootRel, index);
-  return index;
+    return index;
+  })();
+  dirCache.set(rootRel, promise);
+  return promise;
 }
 
-function resolveFile(formatId, basename) {
+async function resolveFile(formatId, basename) {
   for (const rootRel of rootsForFormat(formatId)) {
-    const hit = buildIndex(rootRel).get(basename);
+    const index = await buildIndex(rootRel);
+    const hit = index.get(basename);
     if (hit) return hit;
   }
   return null;
+}
+
+/* The index builds in the background from the start. The first request finds
+ * it ready in most cases. The roots build one after the other: the tree has
+ * more than 100000 files, and 30 walks at the same time slow the machine. */
+function prebuildIndex() {
+  const roots = new Set([...Object.values(FORMAT_ROOTS).flat(), ...DEFAULT_ROOTS]);
+  (async () => {
+    for (const rootRel of roots) {
+      try {
+        await buildIndex(rootRel);
+      } catch (err) {
+        console.error('[texlive] index failed for ' + rootRel + ': ' + err.message);
+      }
+    }
+  })();
 }
 
 /* ------------------------------------------------------------------ *
@@ -207,8 +232,49 @@ function isPlainBasename(name) {
 
 /* Browsers always send Origin on cross-origin writes, so refusing a
  * mismatched Origin is enough to stop CSRF. Absent Origin (curl, the
- * bootstrap page, the test suite) is a same-origin request. */
-function isSameOrigin(req) {
+ * bootstrap page, the test suite) is a same-origin request.
+ *
+ * The Origin is compared with the Host header of the request. A name that
+ * points at this machine is refused: such a name is a DNS rebinding attack.
+ * The page runs in the browser of the developer and reaches the dev server
+ * through a public name, so the Host and the Origin match each other. */
+function isLoopbackName(hostname) {
+  const h = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost' || h === '::1' || h === '0:0:0:0:0:0:0:1') return true;
+  if (/^127\./.test(h)) return true;
+  return false;
+}
+
+/* A private, loopback, or link-local address. */
+function isPrivateAddress(address) {
+  const a = String(address || '').toLowerCase();
+  if (a === '::1' || a === '0:0:0:0:0:0:0:1') return true;
+  if (a.startsWith('fe80') || a.startsWith('fc') || a.startsWith('fd')) return true;
+  if (a.startsWith('::ffff:')) return isPrivateAddress(a.slice(7));
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(a);
+  if (!m) return false;
+  const n = m.slice(1).map(Number);
+  if (n[0] === 127 || n[0] === 10 || n[0] === 0) return true;
+  if (n[0] === 172 && n[1] >= 16 && n[1] <= 31) return true;
+  if (n[0] === 192 && n[1] === 168) return true;
+  if (n[0] === 169 && n[1] === 254) return true;
+  return false;
+}
+
+/* The addresses of a name. An empty list means the name does not resolve. */
+function lookupAddresses(hostname) {
+  return new Promise((resolve) => {
+    dns.lookup(hostname, { all: true, verbatim: true }, (err, addrs) => {
+      if (err || !addrs || !addrs.length) {
+        resolve([]);
+        return;
+      }
+      resolve(addrs.map((a) => a.address));
+    });
+  });
+}
+
+async function isSameOrigin(req) {
   const origin = req.headers.origin;
   if (!origin) return true;
   let parsed;
@@ -221,7 +287,11 @@ function isSameOrigin(req) {
   /* DNS is case-insensitive: LOCALHOST and localhost are the same host.
    * Without the toLowerCase, a legitimate same-origin request with different
    * casing got a 403. */
-  return host !== '' && parsed.host.toLowerCase() === host.toLowerCase();
+  if (!host || parsed.host.toLowerCase() !== host.toLowerCase()) return false;
+  if (isLoopbackName(parsed.hostname)) return true;
+  const addresses = await lookupAddresses(parsed.hostname);
+  if (!addresses.length) return true;
+  return !addresses.some((address) => isPrivateAddress(address));
 }
 
 /* ------------------------------------------------------------------ *
@@ -322,20 +392,94 @@ const UPLOAD_TIMEOUT_MS = (() => {
   return Number.isFinite(v) && v > 0 ? v : 60000;
 })();
 
-/* Forward a custom LLM call so endpoints without CORS headers work from
- * the browser. Same-origin POST only, http(s) targets only, 1 MB cap. */
-const LLM_FORWARD_MAX_BYTES = 1024 * 1024;
+/* The idle timer restarts on every chunk, so a client that sends one byte
+ * per minute holds the slot for ever. The total timer ends the upload. */
+const UPLOAD_TOTAL_TIMEOUT_MS = (() => {
+  const v = parseInt(argOf('--upload-total-timeout-ms', '300000'), 10);
+  return Number.isFinite(v) && v > 0 ? v : 300000;
+})();
 
-function handleLlmForward(req, res) {
+/* Forward a custom LLM call so endpoints without CORS headers work from
+ * the browser. Same-origin POST only, http(s) targets only, 1 MB cap.
+ *
+ * The target must be a public address. The proxy runs on the machine of the
+ * developer, so an open proxy reaches the local network and the cloud
+ * metadata of the host. */
+const LLM_FORWARD_MAX_BYTES = 1024 * 1024;
+const LLM_FORWARD_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+const LLM_FORWARD_TIMEOUT_MS = 30000;
+
+/* The framing and routing headers of the upstream request. A client must not
+ * set them: they belong to the connection, not to the message. */
+const LLM_FORWARD_DENIED_HEADERS = [
+  'host', 'content-length', 'connection', 'transfer-encoding', 'keep-alive',
+  'upgrade', 'te', 'trailer', 'expect', 'proxy-authorization',
+  'proxy-connection', 'forwarded', 'x-forwarded-for', 'x-forwarded-host',
+];
+
+function forwardHeaders(headers) {
+  const out = { 'Content-Type': 'application/json' };
+  if (!headers || typeof headers !== 'object' || Array.isArray(headers)) return out;
+  for (const name of Object.keys(headers)) {
+    const value = headers[name];
+    if (typeof value !== 'string') continue;
+    if (LLM_FORWARD_DENIED_HEADERS.indexOf(name.toLowerCase()) !== -1) continue;
+    if (!/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(name)) continue;
+    out[name] = value;
+  }
+  return out;
+}
+
+/* The body of the upstream answer, with a cap. An answer without a limit
+ * fills the memory of the server. */
+async function readCapped(res, max) {
+  if (!res.body) return '';
+  const reader = res.body.getReader();
+  const parts = [];
+  let total = 0;
+  for (;;) {
+    const step = await reader.read();
+    if (step.done) break;
+    total += step.value.length;
+    if (total > max) {
+      await reader.cancel();
+      throw new Error('the upstream answer is too large');
+    }
+    parts.push(step.value);
+  }
+  return Buffer.concat(parts).toString('utf8');
+}
+
+/* Read the rest of the request and drop it. The answer goes out after the
+ * body: a server that answers while the body is still on the way closes the
+ * connection, and the client sees a reset instead of the answer. */
+function drainRequest(req, maxMs) {
+  if (req.readableEnded || req.complete) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      req.destroy();
+      resolve();
+    }, maxMs || 2000);
+    const done = () => { clearTimeout(timer); resolve(); };
+    req.on('end', done);
+    req.on('error', done);
+    req.on('close', done);
+    req.resume();
+  });
+}
+
+async function handleLlmForward(req, res) {
   if (req.method !== 'POST') {
+    await drainRequest(req);
     res.writeHead(405, { Allow: 'POST' }).end();
     return;
   }
-  if (!isSameOrigin(req)) {
+  if (!(await isSameOrigin(req))) {
+    await drainRequest(req);
     res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Origin not allowed');
     return;
   }
-  let raw = '';
+  const chunks = [];
   let size = 0;
   let settled = false;
   const reject = (code, message) => {
@@ -344,17 +488,25 @@ function handleLlmForward(req, res) {
     res.writeHead(code, { 'Content-Type': 'text/plain' }).end(message);
   };
   req.on('data', (chunk) => {
+    if (settled) return;
     size += chunk.length;
     if (size > LLM_FORWARD_MAX_BYTES) {
-      reject(413, 'Request too large');
-      req.destroy();
+      /* The answer closes the connection. A hard reset would break the
+       * keep-alive socket of the client, and the next request of that
+       * client would fail. */
+      settled = true;
+      res.writeHead(413, { 'Content-Type': 'text/plain', Connection: 'close' }).end('Request too large');
+      drainRequest(req, 2000);
       return;
     }
-    raw += chunk;
+    chunks.push(chunk);
   });
   req.on('end', async () => {
     if (settled) return;
     settled = true;
+    /* The body arrives in several chunks. Decoding every chunk on its own
+     * breaks a multi-byte character that sits on a chunk border. */
+    const raw = Buffer.concat(chunks).toString('utf8');
     let payload = null;
     try {
       payload = JSON.parse(raw);
@@ -363,37 +515,70 @@ function handleLlmForward(req, res) {
       return;
     }
     const target = payload && typeof payload.url === 'string' ? payload.url : '';
-    const outHeaders = payload && payload.headers && typeof payload.headers === 'object' ? payload.headers : {};
     if (!/^https?:\/\//i.test(target)) {
       res.writeHead(400, { 'Content-Type': 'text/plain' }).end('Bad URL');
       return;
     }
+    let parsedTarget = null;
     try {
-      const upstream = await fetch(target, {
+      parsedTarget = new URL(target);
+    } catch (_) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' }).end('Bad URL');
+      return;
+    }
+    if (parsedTarget.username || parsedTarget.password) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' }).end('Bad URL');
+      return;
+    }
+    const addresses = await lookupAddresses(parsedTarget.hostname);
+    if (addresses.some((address) => isPrivateAddress(address))) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Target not allowed');
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), LLM_FORWARD_TIMEOUT_MS);
+    try {
+      const upstream = await fetch(parsedTarget.toString(), {
         method: 'POST',
-        headers: Object.assign({ 'Content-Type': 'application/json' }, outHeaders),
+        headers: forwardHeaders(payload.headers),
         body: typeof payload.body === 'string' ? payload.body : JSON.stringify(payload.body),
+        /* A redirect can point at a private address. The app never needs a
+         * redirect for an LLM endpoint. */
+        redirect: 'manual',
+        signal: controller.signal,
       });
-      const text = await upstream.text();
+      const text = await readCapped(upstream, LLM_FORWARD_MAX_RESPONSE_BYTES);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: upstream.status, text: text }));
     } catch (err) {
-      res.writeHead(502, { 'Content-Type': 'text/plain' }).end('Upstream failed: ' + err.message);
+      /* The headers are already sent when the answer breaks during the
+       * copy. A second writeHead throws and ends the process. */
+      if (!res.headersSent) {
+        res.writeHead(502, { 'Content-Type': 'text/plain' }).end('Upstream failed');
+      } else {
+        res.end();
+      }
+      console.error('[llm-forward] ' + (err && err.message ? err.message : 'error'));
+    } finally {
+      clearTimeout(timer);
     }
   });
   req.on('error', () => reject(500, 'Request failed'));
 }
 
-function handleFmtUpload(req, res) {
+async function handleFmtUpload(req, res) {
   if (req.method !== 'POST') {
+    await drainRequest(req);
     res.writeHead(405, { Allow: 'POST' }).end();
     return;
   }
-  if (!isSameOrigin(req)) {
+  if (!(await isSameOrigin(req))) {
+    await drainRequest(req);
     res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Origin not allowed');
     return;
   }
   if (fmtUploadBusy) {
+    await drainRequest(req);
     res.writeHead(409, { 'Content-Type': 'text/plain' }).end('Another upload in progress');
     return;
   }
@@ -405,10 +590,13 @@ function handleFmtUpload(req, res) {
   let head = Buffer.alloc(0);
   let settled = false;
   let idle = null;
+  let total = null;
   const clearIdle = () => { if (idle !== null) { clearTimeout(idle); idle = null; } };
+  const clearTotal = () => { if (total !== null) { clearTimeout(total); total = null; } };
 
   const discard = () => {
     clearIdle();
+    clearTotal();
     sink.destroy();
     try { fs.unlinkSync(tmpPath); } catch (_) { /* already removed */ }
     fmtUploadBusy = false;
@@ -424,7 +612,23 @@ function handleFmtUpload(req, res) {
     if (settled) return;
     settled = true;
     clearIdle();
+    clearTotal();
     sink.end(() => {
+      /* The write can fail after the last chunk: a full disk or a file
+       * limit ends the stream with an error. The temp file is then short,
+       * and the rename would put a broken format in place of the good one. */
+      let written = -1;
+      try {
+        written = fs.statSync(tmpPath).size;
+      } catch (_) {
+        written = -1;
+      }
+      if (written !== size) {
+        console.error('[fmt] write incomplete: ' + written + ' of ' + size + ' bytes');
+        discard();
+        res.writeHead(500, { 'Content-Type': 'text/plain' }).end('Failed to write the fmt');
+        return;
+      }
       try {
         fs.mkdirSync(path.dirname(FMT_TARGET), { recursive: true });
         fs.renameSync(tmpPath, FMT_TARGET);
@@ -451,6 +655,11 @@ function handleFmtUpload(req, res) {
       setImmediate(() => req.destroy());
     }, UPLOAD_TIMEOUT_MS);
   };
+  /* The upload ends after this time, even when the client keeps sending. */
+  total = setTimeout(() => {
+    reject(408, 'Upload expired');
+    setImmediate(() => req.destroy());
+  }, UPLOAD_TOTAL_TIMEOUT_MS);
   req.on('data', (chunk) => {
     if (settled) return;
     armIdle();
@@ -459,8 +668,12 @@ function handleFmtUpload(req, res) {
       head = Buffer.concat([head, chunk]).subarray(0, FMT_MAGIC.length);
     }
     if (size > FMT_MAX_BYTES) {
-      reject(413, 'Payload too large');
-      setImmediate(() => req.destroy());
+      settled = true;
+      clearIdle();
+      clearTotal();
+      res.writeHead(413, { 'Content-Type': 'text/plain', Connection: 'close' }).end('Payload too large');
+      discard();
+      drainRequest(req, 2000);
       return;
     }
     sink.write(chunk);
@@ -488,16 +701,18 @@ function handleFmtUpload(req, res) {
  * http server
  * ------------------------------------------------------------------ */
 const server = http.createServer((req, res) => {
-  try {
-    handle(req, res);
-  } catch (err) {
-    console.error('handler error:', err.message);
-    if (!res.headersSent) res.writeHead(500).end();
-    else res.end();
-  }
+  /* The handler is async. A rejection that nobody catches ends the process
+   * on Node 15 and later, so the promise gets a catch here. */
+  Promise.resolve()
+    .then(() => handle(req, res))
+    .catch((err) => {
+      console.error('handler error:', err && err.message ? err.message : err);
+      if (!res.headersSent) res.writeHead(500).end();
+      else res.end();
+    });
 });
 
-function handle(req, res) {
+async function handle(req, res) {
   /* A malformed Host (or a strange request-target) breaks the URL parser:
    * that is a bad request (400), never an internal error (500). */
   let url;
@@ -529,7 +744,7 @@ function handle(req, res) {
       return;
     }
     const fileId = withExtension(formatId, basename);
-    const abs = resolveFile(formatId, fileId);
+    const abs = await resolveFile(formatId, fileId);
     const mirrored = resolveInside(MIRROR_ROOT, String(formatId), fileId);
     if (!abs && !(mirrored && fs.existsSync(mirrored))) {
       console.log(`[texlive] MISS pdftex/${formatId}/${basename}`);
@@ -557,12 +772,12 @@ function handle(req, res) {
   }
 
   if (url.pathname === '/api/upload-fmt') {
-    handleFmtUpload(req, res);
+    await handleFmtUpload(req, res);
     return;
   }
 
   if (url.pathname === '/api/llm-forward') {
-    handleLlmForward(req, res);
+    await handleLlmForward(req, res);
     return;
   }
 
@@ -588,4 +803,7 @@ server.listen(PORT, HOST, () => {
   if (!fs.existsSync(TEXMF)) {
     console.warn(`WARN: ${TEXMF} does not exist. Use --texmf <dir>`);
   }
+  /* The TeXLive index builds in the background. The first request does not
+   * wait for the sweep of the whole tree. */
+  prebuildIndex();
 });

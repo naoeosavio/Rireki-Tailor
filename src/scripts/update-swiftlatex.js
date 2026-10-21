@@ -30,9 +30,18 @@ const { execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const WEB_ROOT = path.resolve(__dirname, '..');
-const VENDOR_DIR = path.join(WEB_ROOT, 'vendor', 'swiftlatex');
 const PKG = require(path.join(ROOT, 'package.json'));
 const PIN = PKG.config && PKG.config.swiftlatex;
+
+/* The flags exist for the test suite: it needs a local archive and a
+ * directory of its own. */
+const args = process.argv.slice(2);
+const argOf = (name, dflt) => {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : dflt;
+};
+const VENDOR_DIR = path.resolve(argOf('--vendor-dir', path.join(WEB_ROOT, 'vendor', 'swiftlatex')));
+const PINNED_URL = argOf('--url', PIN && PIN.url);
 
 if (!PIN || !PIN.version || !PIN.url) {
   console.error('update-swiftlatex: missing package.json → config.swiftlatex {version, url}');
@@ -146,13 +155,21 @@ async function download(url) {
 }
 
 (async () => {
+  /* The download goes to a private directory. A file in the shared temp
+   * directory has a name that anyone can guess, and a symlink with that
+   * name makes the write land in another file. */
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swiftlatex-'));
+  const zipPath = path.join(tmpDir, 'swiftlatex.zip');
+  /* The engine files go to a staging directory. The live files change only
+   * when every file passed the checks: a failure in the middle of the run
+   * left the engine half updated before. */
+  const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swiftlatex-stage-'));
   try {
     fs.mkdirSync(VENDOR_DIR, { recursive: true });
 
-    console.log(`update-swiftlatex: fetching ${PIN.version} (${PIN.url})`);
-    const zipBuf = await download(PIN.url);
-    const zipPath = path.join(os.tmpdir(), `swiftlatex-${PIN.version}.zip`);
-    fs.writeFileSync(zipPath, zipBuf);
+    console.log(`update-swiftlatex: fetching ${PIN.version} (${PINNED_URL})`);
+    const zipBuf = await download(PINNED_URL);
+    fs.writeFileSync(zipPath, zipBuf, { flag: 'wx' });
 
     let total = 0;
     for (const file of FILES) {
@@ -162,24 +179,34 @@ async function download(url) {
       });
       let content = applyPatches(file.name, raw.toString('utf8'));
       const outBuf = file.name.endsWith('.wasm') ? raw : Buffer.from(content, 'utf8');
-      const target = path.join(VENDOR_DIR, file.name);
-      fs.writeFileSync(target, outBuf);
+      const staged = path.join(stageDir, file.name);
+      fs.writeFileSync(staged, outBuf, { flag: 'wx' });
       const delta = outBuf.length - raw.length;
       total += delta;
       console.log(`  ${file.name.padEnd(24)} ${String(raw.length).padStart(8)} -> ${String(outBuf.length).padStart(8)} bytes (${delta >= 0 ? '+' : ''}${delta})`);
     }
 
     for (const { file, text } of VERIFY) {
-      const content = fs.readFileSync(path.join(VENDOR_DIR, file), 'utf8');
+      const content = fs.readFileSync(path.join(stageDir, file), 'utf8');
       if (!content.includes(text)) {
         throw new Error(`verify failed: '${text}' not in ${file}`);
       }
     }
     for (const file of ['swiftlatexpdftex.wasm', 'swiftlatexdvipdfm.wasm']) {
-      const head = fs.readFileSync(path.join(VENDOR_DIR, file)).subarray(0, 4);
+      const head = fs.readFileSync(path.join(stageDir, file)).subarray(0, 4);
       if (!head.equals(Buffer.from([0, 0x61, 0x73, 0x6d]))) {
         throw new Error(`verify failed: ${file} missing wasm magic`);
       }
+    }
+
+    /* Every file passed the checks: the live engine changes now. The
+     * rename per file keeps the old file in place until the new one is
+     * complete. */
+    for (const file of FILES) {
+      const target = path.join(VENDOR_DIR, file.name);
+      const pending = target + '.new';
+      fs.copyFileSync(path.join(stageDir, file.name), pending);
+      fs.renameSync(pending, target);
     }
 
     console.log(`\nupdate-swiftlatex: OK — ${PIN.version} vendored into src/vendor/swiftlatex/ (net ${total >= 0 ? '+' : ''}${total} bytes)`);
@@ -187,6 +214,11 @@ async function download(url) {
     console.log('  test.html?autostart=format (wasm) or re-run: npm run bootstrap');
   } catch (err) {
     console.error(`update-swiftlatex: FAILED — ${err.message}`);
-    process.exit(1);
+    process.exitCode = 1;
+  } finally {
+    for (const dir of [tmpDir, stageDir]) {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* best effort */ }
+    }
+    if (process.exitCode) process.exit(process.exitCode);
   }
 })();
