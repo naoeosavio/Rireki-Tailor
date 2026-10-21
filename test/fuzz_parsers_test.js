@@ -19,6 +19,13 @@ const path = require('path');
 const prompts = require('../src/js/prompts.js');
 const lib = require('./fuzz_lib.js');
 
+/* The chat bounds the history with the core. The Node build of the core
+ * has the same truncation as the browser build. */
+globalThis.TellCore = require('@tell-ai/core');
+/* The wire of the custom endpoint comes from the sdk. The llm layer reads
+ * it from the window, like in the browser. */
+globalThis.window = { TellSDK: require('@tell-ai/sdk') };
+
 const ROOT = path.resolve(__dirname, '..');
 const APP = path.join(ROOT, 'src', 'js', 'app.js');
 const CHAT = path.join(ROOT, 'src', 'js', 'chat.js');
@@ -56,7 +63,7 @@ const chat = new Function([
   lib.extractConst(CHAT, 'HISTORY_MAX_MESSAGES'),
   lib.extractFunctions(CHAT, [
     'escHtml', 'inlineMd', 'mdLite', 'fieldText',
-    'contextParts', 'buildSystem', 'historyText', 'serializeHistory',
+    'contextParts', 'buildSystem', 'historyText', 'truncateContext', 'serializeHistory',
   ]),
   'return { escHtml, inlineMd, mdLite, contextParts, buildSystem, serializeHistory };',
 ].join('\n'))();
@@ -64,8 +71,8 @@ const chat = new Function([
 const llm = new Function([
   lib.extractConst(LLM, 'LLM_VENDORS'),
   lib.extractConst(LLM, 'DEFAULT_URLS'),
-  lib.extractFunctions(LLM, ['tellCfg', 'customModelOf', 'customHeadersOf', 'customTextOf']),
-  'return { LLM_VENDORS, DEFAULT_URLS, tellCfg, customModelOf, customHeadersOf, customTextOf };',
+  lib.extractFunctions(LLM, ['tellCfg', 'customModelOf', 'customHeadersOf', 'customTextOf', 'customWire', 'cleanAnswer']),
+  'return { LLM_VENDORS, DEFAULT_URLS, tellCfg, customModelOf, customHeadersOf, customTextOf, customWire, cleanAnswer };',
 ].join('\n'))();
 
 /* ---- seeds ---- */
@@ -298,6 +305,32 @@ test('serializeHistory: the history stays under the size limit', () => {
   });
 });
 
+test('serializeHistory: the history uses the turn markers of the core', () => {
+  const out = chat.serializeHistory([
+    { role: 'user', content: 'q1' },
+    { role: 'assistant', content: 'a1' },
+  ]);
+  assert.strictEqual(out, 'User:\nq1\n\nAssistant:\na1');
+});
+
+test('serializeHistory: a long history is cut at a turn border', () => {
+  const messages = [];
+  for (let i = 0; i < 14; i++) {
+    messages.push({ role: 'user', content: 'q' + i + ' ' + 'w'.repeat(5000) });
+    messages.push({ role: 'assistant', content: 'a' + i + ' ' + 'v'.repeat(5000) });
+  }
+  const out = chat.serializeHistory(messages);
+  assert.ok(out.length <= 24000, 'the history is too long: ' + out.length);
+  assert.ok(
+    out.indexOf('[older context truncated]') !== -1,
+    'the cut has no marker: ' + out.slice(0, 80)
+  );
+  /* A turn that is cut in the middle leaves a partial run of the filler.
+   * Every kept turn holds a whole run. */
+  assert.strictEqual((out.match(/w/g) || []).length % 5000, 0, 'a user turn was cut');
+  assert.strictEqual((out.match(/v/g) || []).length % 5000, 0, 'an assistant turn was cut');
+});
+
 /* ================================================================== *
  * llm.js — the config layer
  * ================================================================== */
@@ -350,7 +383,7 @@ test('customHeadersOf: the answer is an object or a clear error', () => {
 
 test('customTextOf: the answer is text or a clear error', () => {
   lib.fuzz('customTextOf', REPLY_SEEDS, 300, (input) => {
-    for (const api of ['chat', 'responses']) {
+    for (const api of ['chat', 'responses', 'messages']) {
       try {
         const out = llm.customTextOf(input, api);
         assert.strictEqual(typeof out, 'string');
@@ -361,6 +394,31 @@ test('customTextOf: the answer is text or a clear error', () => {
       }
     }
   });
+});
+
+test('customTextOf: the messages wire reads the content blocks', () => {
+  const answer = llm.customTextOf({ content: [{ type: 'text', text: 'hello' }] }, 'messages');
+  assert.strictEqual(answer, 'hello');
+  assert.throws(() => llm.customTextOf({ content: [] }, 'messages'), /no text/);
+});
+
+test('customWire: the pinned wire wins over the model id', () => {
+  assert.strictEqual(llm.customWire({ model: 'custom:claude-x', customApi: 'chat' }), 'chat');
+  assert.strictEqual(llm.customWire({ model: 'custom:claude-x', customApi: 'responses' }), 'responses');
+  assert.strictEqual(llm.customWire({ model: 'custom:claude-x', customApi: 'messages' }), 'messages');
+});
+
+test('customWire: the auto mode follows the model id of the sdk', () => {
+  assert.strictEqual(llm.customWire({ model: 'custom:gpt-5.4-mini' }), 'responses');
+  assert.strictEqual(llm.customWire({ model: 'custom:claude-sonnet-4' }), 'messages');
+  assert.strictEqual(llm.customWire({ model: 'custom:llama-3.3-70b' }), 'chat');
+});
+
+test('cleanAnswer: a tag that the model left open is cut', () => {
+  assert.strictEqual(llm.cleanAnswer('the answer'), 'the answer');
+  assert.strictEqual(llm.cleanAnswer('the answer<think>secret'), 'the answer');
+  assert.strictEqual(llm.cleanAnswer('the answer</RUN>'), 'the answer');
+  assert.strictEqual(llm.cleanAnswer('<think>secret</think> the answer'), '<think>secret</think> the answer');
 });
 
 /* ================================================================== *

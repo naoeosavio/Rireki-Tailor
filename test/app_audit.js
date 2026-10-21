@@ -689,6 +689,168 @@ test('llm: the stop button drops the pending answer', async (page) => {
 });
 
 /* ================================================================== *
+ * the fix chain: repair, compile, retry
+ * ================================================================== */
+
+test('fix: the chain repairs, compiles and retries until the document compiles', async (page) => {
+  await seed(page, {
+    'riki.config': { model: 'g', keys: { openai: 'sk-test' }, urls: {} },
+    'riki.sections': { s1: section({ name: 'A', tex: 'not latex at all' }) },
+    'riki.active': 's1',
+  });
+  /* The engine fails the first compile and accepts the second. The model
+   * answers with a broken reply first and with a document after that. */
+  await page.evaluate(() => {
+    window.__compiles = 0;
+    window.__asks = 0;
+    window.PdfTeXEngine = function () {
+      return {
+        loadEngine: () => Promise.resolve(),
+        writeMemFSFile: () => {},
+        setEngineMainFile: () => {},
+        flushCache: () => {},
+        compileLaTeX: () => {
+          window.__compiles++;
+          if (window.__compiles === 1) {
+            return Promise.resolve({ status: 1, log: '! LaTeX Error: Missing $ inserted.\nl.12 $' });
+          }
+          return Promise.resolve({ status: 0, log: '', pdf: new Uint8Array([37, 80, 68, 70, 45, 49, 46, 52]) });
+        },
+      };
+    };
+    window.TellSDK = {
+      create_ask_ai: async () => ({
+        ask: async () => {
+          window.__asks++;
+          if (window.__asks === 1) return 'still broken, no document here';
+          /* A different document every round: the chain keeps working. */
+          return '\\documentclass{article}\n\\begin{document}\nFixed ' + window.__asks + '.\n\\end{document}';
+        },
+      }),
+    };
+  });
+  await page.click('[data-nav="3"]');
+  await page.waitForTimeout(300);
+  await page.click('#btn-fix-tex');
+  await page.waitForFunction(
+    () => document.getElementById('status').textContent.includes('fixed'),
+    null,
+    { timeout: 30000 }
+  );
+  const out = await page.evaluate(() => ({
+    compiles: window.__compiles,
+    asks: window.__asks,
+    tex: JSON.parse(localStorage.getItem('riki.sections')).s1.tex,
+    status: document.getElementById('status').textContent,
+  }));
+  assert.ok(out.asks >= 2, 'the model was called ' + out.asks + ' time(s): ' + out.status);
+  assert.ok(out.compiles >= 1, 'the engine compiled ' + out.compiles + ' time(s): ' + out.status);
+  assert.ok(out.tex.indexOf('\\documentclass') !== -1, 'the fixed tex was not saved: ' + out.tex.slice(0, 80));
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+test('fix: a chain that never compiles asks the user to rewrite the tex', async (page) => {
+  await seed(page, {
+    'riki.config': { model: 'g', keys: { openai: 'sk-test' }, urls: {} },
+    'riki.sections': { s1: section({ name: 'A', tex: 'not latex at all' }) },
+    'riki.active': 's1',
+  });
+  /* Every compile fails and every answer is a new document: the chain runs
+   * the whole budget and then tells the user to rewrite the tex. */
+  await page.evaluate(() => {
+    window.__compiles = 0;
+    window.__asks = 0;
+    window.PdfTeXEngine = function () {
+      return {
+        loadEngine: () => Promise.resolve(),
+        writeMemFSFile: () => {},
+        setEngineMainFile: () => {},
+        flushCache: () => {},
+        compileLaTeX: () => {
+          window.__compiles++;
+          return Promise.resolve({ status: 1, log: '! LaTeX Error: File ended while scanning use.' });
+        },
+      };
+    };
+    window.TellSDK = {
+      create_ask_ai: async () => ({
+        ask: async () => {
+          window.__asks++;
+          return '\\documentclass{article}\n\\begin{document}\nStill broken ' + window.__asks + '.\n\\end{document}';
+        },
+      }),
+    };
+  });
+  await page.click('[data-nav="3"]');
+  await page.waitForTimeout(300);
+  await page.click('#btn-fix-tex');
+  await page.waitForFunction(
+    () => document.getElementById('status').textContent.includes('rewrite'),
+    null,
+    { timeout: 60000 }
+  );
+  const out = await page.evaluate(() => ({
+    asks: window.__asks,
+    compiles: window.__compiles,
+    status: document.getElementById('status').textContent,
+    tex: JSON.parse(localStorage.getItem('riki.sections')).s1.tex,
+  }));
+  assert.ok(/rewrite/i.test(out.status), 'the status does not ask for a rewrite: ' + out.status);
+  assert.strictEqual(out.asks, 8, 'the chain ran ' + out.asks + ' rounds instead of 8');
+  assert.strictEqual(out.compiles, 8, 'the engine compiled ' + out.compiles + ' times instead of 8');
+  assert.ok(out.tex.indexOf('not latex at all') !== -1, 'the broken tex was replaced by a broken answer');
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+test('fix: the chain stops early when the model repeats the same document', async (page) => {
+  await seed(page, {
+    'riki.config': { model: 'g', keys: { openai: 'sk-test' }, urls: {} },
+    'riki.sections': { s1: section({ name: 'A', tex: 'not latex at all' }) },
+    'riki.active': 's1',
+  });
+  /* The model always answers with the same document and every compile
+   * fails: the chain must stop before the budget is spent. */
+  await page.evaluate(() => {
+    window.__compiles = 0;
+    window.__asks = 0;
+    window.PdfTeXEngine = function () {
+      return {
+        loadEngine: () => Promise.resolve(),
+        writeMemFSFile: () => {},
+        setEngineMainFile: () => {},
+        flushCache: () => {},
+        compileLaTeX: () => {
+          window.__compiles++;
+          return Promise.resolve({ status: 1, log: '! LaTeX Error: File ended while scanning use.' });
+        },
+      };
+    };
+    window.TellSDK = {
+      create_ask_ai: async () => ({
+        ask: async () => {
+          window.__asks++;
+          return '\\documentclass{article}\n\\begin{document}\nThe same document.\n\\end{document}';
+        },
+      }),
+    };
+  });
+  await page.click('[data-nav="3"]');
+  await page.waitForTimeout(300);
+  await page.click('#btn-fix-tex');
+  await page.waitForFunction(
+    () => document.getElementById('status').textContent.includes('rewrite'),
+    null,
+    { timeout: 60000 }
+  );
+  const out = await page.evaluate(() => ({
+    asks: window.__asks,
+    compiles: window.__compiles,
+  }));
+  assert.ok(out.asks < 8, 'the chain ran ' + out.asks + ' rounds with the same answer');
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+/* ================================================================== *
  * a stalled data file must not kill the app
  * ================================================================== */
 

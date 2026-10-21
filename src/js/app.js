@@ -1411,8 +1411,18 @@
     }
   }
 
-  // Sends the current .tex plus the last compiler error to the LLM and
-  // writes the fixed source back. Never clears tex on failure.
+  /* The fix is a chain loop: the model repairs the document, the app
+   * compiles it, and the error of a failed compile goes back to the model.
+   * The core owns the loop and the cap of the rounds. */
+  function fixMaxRounds() {
+    const core = typeof window !== 'undefined' ? window.TellCore : null;
+    if (core && typeof core.DEFAULT_MAX_CHAIN_STEPS === 'number') return core.DEFAULT_MAX_CHAIN_STEPS;
+    return 8;
+  }
+
+  // Sends the current .tex plus the last compiler error to the LLM, compiles
+  // the answer, and repeats until the document compiles. Never clears tex on
+  // failure.
   async function fixTex(s) {
     if (!s.tex.trim()) { toast('Nothing to fix — CV.tex is empty.', 'warn'); return; }
     // No log yet (fresh section or post-success): fall back to the local
@@ -1426,51 +1436,121 @@
         return;
       }
     }
-    setStatus('Fixing LaTeX from the error log (' + config.model + ')…', 'busy');
-    const broken = s.tex;
-    const errTail = lastCompileError.slice(-FIX_LOG_TAIL);
+    const core = typeof window !== 'undefined' ? window.TellCore : null;
+    if (!core || typeof core.run_primitive_loop !== 'function') {
+      setStatus('The core did not load — the fix loop needs it.', 'err');
+      toast('The core did not load — the fix loop needs it.', 'err');
+      return;
+    }
+    const rounds = fixMaxRounds();
+    setStatus('Fixing LaTeX (' + config.model + ')…', 'busy');
+    const sectionId = activeId;
     // The broken tex already carries its own preamble when it has one;
     // sending the library template on top only bloats the prompt and
     // pushes small models into truncated replies. Send the template
     // only when the broken tex has no preamble to work from.
-    const refTemplate = broken.indexOf('\\documentclass') === -1 ? s.template : '';
-    let raw = '';
-    let fixed = '';
+    const state = {
+      tex: s.tex,
+      error: lastCompileError.slice(-FIX_LOG_TAIL),
+      template: s.tex.indexOf('\\documentclass') === -1 ? s.template : '',
+      attempt: 0,
+      ok: false,
+      pdf: null,
+    };
+    const cancel = createCancelToken();
+    /* One turn of the chain: the model repairs, the app compiles. A failed
+     * compile comes back as a failed command, and the core starts the next
+     * round with it. */
+    const turn = {
+      run: async () => {
+        state.attempt++;
+        setStatus('Fixing LaTeX — attempt ' + state.attempt + '/' + rounds + '…', 'busy');
+        const raw = await tellChat(buildFixTexPrompt(state.tex, state.error, state.template), config);
+        const fixed = sanitizeTex(raw);
+        const problem = getTexProblem(fixed);
+        if (problem) {
+          /* The answer is not a document: the reason goes back to the model
+           * and the detailed message waits for the user. */
+          state.failure = describeFixFailure(raw, problem);
+          state.error = 'The answer was not a complete document (' + problem + ').';
+          return {
+            status: 'completed',
+            text: '',
+            timeline: ['Attempt ' + state.attempt + ': the answer was not a document (' + problem + ')'],
+            commands: [{ script: 'pdflatex', status: 'failed', output: state.error, exit_code: 1 }],
+          };
+        }
+        if (fixed === state.tex) {
+          /* The model returned the same document: it is not making progress.
+           * The cancel token ends the chain. */
+          state.error = 'The answer was the same document as the one that failed.';
+          if (cancel) cancel.cancel();
+          return {
+            status: 'completed',
+            text: '',
+            timeline: ['Attempt ' + state.attempt + ': the answer was the same document'],
+            commands: [{ script: 'pdflatex', status: 'failed', output: state.error, exit_code: 1 }],
+          };
+        }
+        const eng = await getEngine();
+        const res = await compileWith(eng, fixed);
+        if (res.status === 0) {
+          state.tex = fixed;
+          state.ok = true;
+          state.pdf = res.pdf;
+          return {
+            status: 'completed',
+            text: fixed,
+            timeline: ['Attempt ' + state.attempt + ': the document compiled'],
+            commands: [],
+          };
+        }
+        state.tex = fixed;
+        state.error = String(res.log || ('status ' + res.status)).slice(-FIX_LOG_TAIL);
+        return {
+          status: 'completed',
+          text: '',
+          timeline: ['Attempt ' + state.attempt + ': the compile failed'],
+          commands: [{ script: 'pdflatex', status: 'failed', output: state.error, exit_code: 1 }],
+        };
+      },
+    };
+    /* The engine has one slot: the trial compiles of the chain must not
+     * overlap with a compile of the user. */
+    compileBusy = true;
     try {
-      raw = await tellChat(buildFixTexPrompt(broken, errTail, refTemplate), config);
-      fixed = sanitizeTex(raw);
-    } catch (e) {
-      setStatus('ERROR: ' + e.message, 'err');
-      log('ERROR:', e.message);
-      toast(e.code === 'NO_KEY' ? e.message + ' Open the menu (LLM).' : e.message, 'err', 6000);
+      await core.run_primitive_loop('', {
+        runtime_options: cancel ? { cancellation: cancel } : {},
+        single_turn: turn,
+        max_rounds: rounds,
+      });
+    } finally {
+      compileBusy = false;
+    }
+    if (!state.ok) {
+      const msg = 'Could not fix the LaTeX in ' + state.attempt + ' attempt(s) — rewrite CV.tex by hand or regenerate it with "Convert to LaTeX".';
+      setStatus(msg, 'err');
+      log('fixTex: the chain ended without a compiling document after ' + state.attempt + ' attempt(s).'
+        + (state.failure ? ' Last answer: ' + state.failure.status : ''));
+      toast(msg, 'err', 9000);
       return;
     }
-    const texProblem = getTexProblem(fixed);
-    if (texProblem) {
-      const msg = describeFixFailure(raw, texProblem);
-      setStatus(msg.status, 'err');
-      log('fixTex warning: raw ' + String(raw).length + ' chars, sanitized ' + fixed.length +
-        ' chars, problem = ' + texProblem + '. Head: ' + String(raw).trim().slice(0, 200));
-      toast(msg.toast, 'err', 6000);
+    s.tex = state.tex;
+    s.texHash = texHashOf(s);
+    touch(s); saveAll();
+    /* The user can change the section while the model works. */
+    if (active() !== s) {
+      toast('Fixed .tex saved in "' + s.name + '" — switch to that section.', 'ok');
       return;
-    } else {
-      s.tex = fixed;
-      s.texHash = texHashOf(s);
-      touch(s); saveAll();
-      /* The user can change the section while the model works. */
-      if (active() !== s) {
-        toast('Fixed .tex saved in "' + s.name + '" — switch to that section.', 'ok');
-        return;
-      }
-      $('tex').value = s.tex;
-      updateCounter('tex');
-      // Consumed: reusing the pre-fix log against the new tex would
-      // send the model fixing an already-fixed file in circles.
-      lastCompileError = '';
-      setStatus('LaTeX fixed — compiling again…', 'ok');
-      toast('Fixed .tex applied — compiling again', 'ok');
-      await compilePdf();
     }
+    $('tex').value = s.tex;
+    updateCounter('tex');
+    // Consumed: reusing the pre-fix log against the new tex would
+    // send the model fixing an already-fixed file in circles.
+    lastCompileError = '';
+    setStatus('LaTeX fixed on attempt ' + state.attempt + ' — PDF generated', 'ok');
+    toast('Fixed .tex applied (attempt ' + state.attempt + ')', 'ok');
+    if (state.pdf) showPdf(state.pdf, sectionId);
   }
 
   // ---------- Step 5 / Engine ----------
@@ -1499,6 +1579,16 @@
   /* The engine has one slot. A second compile overwrites the message
    * handler of the worker, and the PDF of the first compile comes back. */
   let compileBusy = false;
+
+  /* Compiles a .tex with the engine and returns its answer. The engine has
+   * one slot: the caller keeps the calls apart. */
+  async function compileWith(eng, tex) {
+    eng.writeMemFSFile('main.tex', tex);
+    eng.setEngineMainFile('main.tex');
+    const res = await eng.compileLaTeX();
+    try { eng.flushCache(); } catch (_) { /* engine may not be ready */ }
+    return res;
+  }
 
   async function compilePdf() {
     const s = active();
@@ -1542,10 +1632,7 @@
     try {
       const eng = await getEngine();
       clearInterval(timer);
-      eng.writeMemFSFile('main.tex', s.tex);
-      eng.setEngineMainFile('main.tex');
-      const res = await eng.compileLaTeX();
-      try { eng.flushCache(); } catch (_) { /* engine may not be ready */ }
+      const res = await compileWith(eng, s.tex);
       log('status:', res.status, '(' + ((performance.now() - t0) / 1000).toFixed(0) + 's)');
       if (res.status === 0) {
         lastCompileError = '';
