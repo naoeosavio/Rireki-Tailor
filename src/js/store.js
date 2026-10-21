@@ -20,6 +20,11 @@ const STORE_FALLBACK_NAME = 'New job';
  * 200 sections / 200 recent messages is plenty of headroom for real use. */
 const STORE_MAX_CHAT = 200;
 const STORE_MAX_SECTIONS = 200;
+/* The load path has a higher ceiling than the import path. The import can
+ * only add a limited batch, so the load only meets a state that the app
+ * itself wrote. A real user can have more than 200 sections, and a load
+ * that drops them loses data. 2000 sections still load in under a second. */
+const STORE_MAX_SECTIONS_LOAD = 2000;
 /* File uploads (master/template/tex via FileReader): without a ceiling, a
  * multi-GB file goes entirely into RAM and then into localStorage. */
 const STORE_MAX_FILE_BYTES = 8 * 1024 * 1024;
@@ -170,18 +175,43 @@ function normalizeLibrary(raw) {
 }
 
 /* Merge imported items without evicting local ones when the ceiling is hit:
- * the old slice(-max) replaced the user's library with the backup's. */
+ * the old slice(-max) replaced the user's library with the backup's.
+ *
+ * The local list is filtered: a raw list can hold a null or a number, and
+ * the renderer reads e.name on every entry. The source id of every entry is
+ * tracked apart from the id in the list, so the same backup merged twice
+ * does not add the same item twice. */
 function mergeLibraryList(local, incoming, kind, max) {
-  const target = Array.isArray(local) ? local.slice() : [];
+  /* A duplicate id is dropped: the renderer looks the card up by id, so
+   * the second card with the same id can never be reached. */
+  const localIds = [];
+  const target = (Array.isArray(local) ? local : []).filter(isStoreObject).filter((entry) => {
+    if (typeof entry.id !== 'string' || !isStoreSafeId(entry.id)) return true;
+    if (localIds.indexOf(entry.id) !== -1) return false;
+    localIds.push(entry.id);
+    return true;
+  });
+  /* The ids in the list. The normalizer uses them to build a new id that
+   * does not collide with an entry of the list. */
   const taken = target.map((e) => e.id);
+  /* The source id of every entry. An imported entry with an unusable id
+   * gets a new one, so the source id is the only way to know that the same
+   * backup item arrived twice. */
+  const sourceIds = target.map((e) => e.id);
   const source = Array.isArray(incoming) ? incoming : [];
   let added = 0;
   let skipped = 0;
   source.forEach((raw) => {
     if (!isStoreObject(raw)) { skipped++; return; }
-    if (isStoreSafeId(raw.id) && taken.indexOf(raw.id) !== -1) { skipped++; return; }
+    if (typeof raw.id === 'string' && sourceIds.indexOf(raw.id) !== -1) { skipped++; return; }
     if (target.length >= max) { skipped++; return; }
-    target.push(normalizeLibraryEntry(raw, kind, taken));
+    const entry = normalizeLibraryEntry(raw, kind, taken);
+    /* The same item twice must not land in the list twice. The id of an
+     * imported item can change, so the content decides as well. */
+    const sameContent = target.some((e) => e.name === entry.name && e.content === entry.content);
+    if (sameContent) { skipped++; return; }
+    target.push(entry);
+    sourceIds.push(typeof raw.id === 'string' ? raw.id : entry.id);
     added++;
   });
   return { merged: target, added: added, skipped: skipped };
@@ -218,6 +248,7 @@ if (typeof module !== 'undefined' && module.exports) {
     STORE_LANGS: STORE_LANGS,
     STORE_MAX_CHAT: STORE_MAX_CHAT,
     STORE_MAX_SECTIONS: STORE_MAX_SECTIONS,
+    STORE_MAX_SECTIONS_LOAD: STORE_MAX_SECTIONS_LOAD,
     STORE_MAX_FILE_BYTES: STORE_MAX_FILE_BYTES,
     isFileTooBig: isFileTooBig,
     isStoreSafeId: isStoreSafeId,

@@ -187,7 +187,9 @@
   function loadAll() {
     config = normalizeConfig(loadJsonKey(LS_CONFIG, {}), LLM_VENDORS);
     backfillDefaultUrls(config);
-    sections = normalizeSections(loadJsonKey(LS_SECTIONS, {}));
+    /* The load has a ceiling: a state with 20000 sections freezes every
+     * render and repeats the freeze on every load. */
+    sections = normalizeSections(loadJsonKey(LS_SECTIONS, {}), STORE_MAX_SECTIONS_LOAD);
     library = normalizeLibrary(loadJsonKey(LS_LIBRARY, null));
     /* Direct read (does not go through readJsonSafe): without the try,
      * blocked storage took down init before wiring the handlers. */
@@ -195,7 +197,10 @@
     try {
       a = localStorage.getItem(LS_ACTIVE);
     } catch (_) { a = null; }
-    activeId = a && sections[a] ? a : null;
+    /* Without a fallback, a missing active key leaves the list with no
+     * selection and the "no section" banner, although sections exist. */
+    const ids = Object.keys(sections);
+    activeId = a && sections[a] ? a : (ids.length ? ids[0] : null);
   }
 
   // ---------- Helpers ----------
@@ -438,12 +443,26 @@
     }
   }
 
+  /* A fetch of a data file must not wait for ever. A request that never
+   * ends blocks the app, and the text the user typed is never saved. */
+  const FETCH_TIMEOUT_MS = 15000;
+
+  async function fetchText(url, signal) {
+    const r = await fetch(url, signal ? { signal: signal } : undefined);
+    if (!r.ok) throw new Error('Failed to load ' + url + ': HTTP ' + r.status);
+    return await r.text();
+  }
+
   async function fetchOptional(url) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      return await fetchText(url);
+      return await fetchText(url, controller.signal);
     } catch (e) {
       console.warn('defaults fetch failed', url, e);
       return '';
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -616,8 +635,12 @@
   }
 
   function sanitizeFenced(text) {
-    const m = text.match(/```[^\n]*\n?([\s\S]*?)```/);
-    return m ? m[1].trim() : text;
+    const src = String(text == null ? '' : text);
+    const m = src.match(/```[^\n]*\n?([\s\S]*?)```/);
+    if (m) return m[1].trim();
+    /* A reply can end with a fence that never closed. The stray marker
+     * reaches pdflatex and breaks the compile. */
+    return src.replace(/```[a-zA-Z0-9_-]*/g, '');
   }
 
   const TEX_END_RE = /\\end\s*\{(?:document|end)\}/i;
@@ -986,7 +1009,13 @@
         if (!sections[id] && Object.keys(sections).length >= STORE_MAX_SECTIONS) { skippedSections++; return; }
         sections[id] = normalizeSection(data.sections[id]);
       });
-      if (data.config) Object.assign(config, normalizeConfig(data.config, LLM_VENDORS));
+      if (data.config) {
+        /* The backup holds no API keys. The keys and the urls of the
+         * browser stay: an import must not send the key of the user to the
+         * endpoint of another file. */
+        const imported = normalizeConfig(data.config, LLM_VENDORS);
+        if (imported.model) config.model = imported.model;
+      }
       if (data.library && typeof data.library === 'object' && !Array.isArray(data.library)) {
         [['masters', 'master'], ['templates', 'template']].forEach(([listKey, kind]) => {
           const merged = mergeLibraryList(library[listKey], data.library[listKey], kind, libMax(kind));
@@ -1237,11 +1266,7 @@
     if (window.Chat) Chat.render();
   }
 
-  async function fetchText(url) {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('Failed to load ' + url + ': HTTP ' + r.status);
-    return await r.text();
-  }
+  /* ---------------------------------------------------------------- */
 
   // ---------- LLM ----------
   // Single in-flight LLM op: concurrent runs on the same section would
@@ -1274,9 +1299,15 @@
     if (!s.master.trim()) { toast('The master CV is empty — upload or paste a CV.', 'warn'); return; }
     setStatus('Generating CV_OUT.md (' + config.model + ')…', 'busy');
     s.cvOut = sanitizeFenced(await tellChat(buildAtsPrompt(s.master, s.lang, s.role), config));
+    touch(s); saveAll();
+    /* The user can change the section while the model works. The answer
+     * belongs to the old section and must not land in the new one. */
+    if (active() !== s) {
+      toast('CV_OUT.md generated for "' + s.name + '" — switch to that section.', 'ok');
+      return;
+    }
     $('cvOut').value = s.cvOut;
     updateCounter('cvOut');
-    touch(s); saveAll();
     setStatus('CV_OUT.md generated — review it in Step 2', 'ok');
     toast('CV_OUT.md ready in Step 2', 'ok');
     goTo(2);
@@ -1286,9 +1317,13 @@
     if (!(s.cvOut.trim() || s.master.trim())) { toast('Generate CV_OUT.md or have a master CV before the cover letter.', 'warn'); return; }
     setStatus('Generating cover.md (' + config.model + ')…', 'busy');
     s.cover = sanitizeFenced(await tellChat(buildCoverPrompt(s.cvOut || s.master, s.lang, s.role, s.pitch), config));
+    touch(s); saveAll();
+    if (active() !== s) {
+      toast('cover.md generated for "' + s.name + '" — switch to that section.', 'ok');
+      return;
+    }
     $('cover').value = s.cover;
     updateCounter('cover');
-    touch(s); saveAll();
     setStatus('cover.md generated — review it in Step 2', 'ok');
     toast('cover.md ready in Step 2', 'ok');
     goTo(2);
@@ -1323,9 +1358,14 @@
     } else {
       s.tex = fresh;
       s.texHash = curHash;
+      touch(s); saveAll();
+      /* The user can change the section while the model works. */
+      if (active() !== s) {
+        toast('.tex generated for "' + s.name + '" — switch to that section.', 'ok');
+        return;
+      }
       $('tex').value = s.tex;
       updateCounter('tex');
-      touch(s); saveAll();
       setStatus('.tex generated — compiling the PDF…', 'ok');
       toast('.tex generated in Step 3 — compiling the PDF', 'ok');
     }
@@ -1411,9 +1451,14 @@
     } else {
       s.tex = fixed;
       s.texHash = texHashOf(s);
+      touch(s); saveAll();
+      /* The user can change the section while the model works. */
+      if (active() !== s) {
+        toast('Fixed .tex saved in "' + s.name + '" — switch to that section.', 'ok');
+        return;
+      }
       $('tex').value = s.tex;
       updateCounter('tex');
-      touch(s); saveAll();
       // Consumed: reusing the pre-fix log against the new tex would
       // send the model fixing an already-fixed file in circles.
       lastCompileError = '';
@@ -1427,29 +1472,36 @@
   function getEngine() {
     if (engine) return Promise.resolve(engine);
     if (!enginePromise) {
-      enginePromise = new Promise((resolve, reject) => {
+      /* The promise is built with an async function: a throw in the
+       * constructor or in loadEngine must not stay cached, or every later
+       * compile fails with the same error and no retry. */
+      const promise = (async () => {
         setStatus('Loading LaTeX engine (first time ~1 min)…', 'busy');
         const e = new PdfTeXEngine();
-        e.loadEngine().then(() => {
-          engine = e;
-          enginePromise = null;
-          setStatus('Engine ready', 'ok');
-          resolve(e);
-        }, (err) => {
-          /* Without clearing the promise, the rejection stayed cached and no
-           * later compile retried — the page only came back to life on
-           * reload. */
-          enginePromise = null;
-          reject(err);
-        });
+        await e.loadEngine();
+        engine = e;
+        setStatus('Engine ready', 'ok');
+        return e;
+      })();
+      enginePromise = promise;
+      promise.catch(() => {
+        if (enginePromise === promise) enginePromise = null;
       });
     }
     return enginePromise;
   }
 
+  /* The engine has one slot. A second compile overwrites the message
+   * handler of the worker, and the PDF of the first compile comes back. */
+  let compileBusy = false;
+
   async function compilePdf() {
     const s = active();
     if (!s) return;
+    if (compileBusy) {
+      toast('A compile is still running — wait for it to finish.', 'warn');
+      return;
+    }
     if (!s.tex.trim()) {
       setStatus('Step 5: the .tex is empty — generate or paste a .tex.', 'warn');
       toast('Compile what? CV.tex is empty.', 'warn');
@@ -1474,6 +1526,10 @@
     setStatus('Compiling PDF (first time ~20 min)…', 'busy');
     log('--- compile start (' + now() + ') ---');
     progress(true);
+    compileBusy = true;
+    /* The section of this compile. The user can change it while the
+     * engine works. */
+    const sectionId = activeId;
     const t0 = performance.now();
     const timer = setInterval(() => {
       setStatus('Compiling PDF… ' + ((performance.now() - t0) / 1000).toFixed(0) + 's', 'busy');
@@ -1488,7 +1544,15 @@
       log('status:', res.status, '(' + ((performance.now() - t0) / 1000).toFixed(0) + 's)');
       if (res.status === 0) {
         lastCompileError = '';
-        showPdf(res.pdf);
+        /* The PDF belongs to the section of the compile. Another section is
+         * active now: the PDF of the other section must not stay on the
+         * screen. */
+        if (activeId !== sectionId) {
+          hidePdf();
+          toast('PDF compiled for another section — switch to it to see the PDF.', 'ok');
+          return;
+        }
+        showPdf(res.pdf, sectionId);
         setStatus('PDF generated (' + res.pdf.length + ' bytes)', 'ok');
         toast('PDF compiled successfully', 'ok');
       } else {
@@ -1513,16 +1577,19 @@
       toast('COMPILE ERROR: ' + e.message, 'err');
     } finally {
       clearInterval(timer);
+      compileBusy = false;
       setBusy('btn-compile', false);
       progress(false);
     }
   }
 
-  function showPdf(uint8) {
+  function showPdf(uint8, sectionId) {
     const viewer = $('viewer');
     if (pdfUrl) URL.revokeObjectURL(pdfUrl);
     pdfUrl = URL.createObjectURL(new Blob([uint8], { type: 'application/pdf' }));
-    pdfSectionId = activeId;
+    /* The PDF belongs to the section of the compile, not to the section
+     * that happens to be active now. */
+    pdfSectionId = sectionId === undefined ? activeId : sectionId;
     viewer.src = pdfUrl;
     viewer.style.display = 'block';
   }
@@ -1810,11 +1877,6 @@
     $('btn-save-master-model').addEventListener('click', () => saveModelFromSection('master'));
     $('btn-save-template-model').addEventListener('click', () => saveModelFromSection('template'));
 
-    if (!Object.keys(sections).length) {
-      await createInitial();
-    }
-    await ensureLibrarySeed();
-
     renderSections();
     fillStep1();
     fillConfig();
@@ -1889,6 +1951,26 @@
     if (!active()) $('step1-empty').style.display = 'block';
     setStatus('Ready', 'ok');
     saveAll();
+    /* The seed runs after the wiring. A slow data file must not stop the
+     * app from working, and the user must be able to type at once. */
+    await seedDefaults();
+  }
+
+  /* Loads the default content of a fresh profile. A failure here leaves the
+   * app empty but usable. */
+  async function seedDefaults() {
+    try {
+      if (!Object.keys(sections).length) {
+        await createInitial();
+      }
+      await ensureLibrarySeed();
+      renderSections();
+      fillStep1();
+      renderLibrary();
+      setStatus('Ready', 'ok');
+    } catch (e) {
+      console.warn('the seed failed', e);
+    }
   }
 
   function addLibraryEntry(kind) {
@@ -1916,10 +1998,14 @@
       fetchOptional(DEFAULT_FILES.template),
       fetchOptional(DEFAULT_FILES.pitch),
     ]);
-    s.role = nonEmpty(role) || embeddedRole();
-    s.master = nonEmpty(master) || embeddedMaster(s.lang);
-    s.template = nonEmpty(template) || embeddedTemplate('ats');
-    s.pitch = nonEmpty(pitch);
+    /* The user can type while the default files load. The typed text wins
+     * over the default file. */
+    const typed = {};
+    STEP1_FIELDS.forEach((k) => { typed[k] = $(k) ? $(k).value : ''; });
+    s.role = (typed.role || '').trim() || nonEmpty(role) || embeddedRole();
+    s.master = (typed.master || '').trim() || nonEmpty(master) || embeddedMaster(s.lang);
+    s.template = (typed.template || '').trim() || nonEmpty(template) || embeddedTemplate('ats');
+    s.pitch = (typed.pitch || '').trim() || nonEmpty(pitch);
     const id = 's' + Date.now().toString(36);
     sections[id] = s;
     activeId = id;

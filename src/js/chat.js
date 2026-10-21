@@ -53,37 +53,58 @@
 
   function mdLite(src) {
     src = String(src == null ? '' : src);
-    const blocks = [];
-    src = src.replace(/```[\s\S]*?```/g, (m) => {
-      const inner = m.replace(/^```[a-zA-Z0-9_-]*\n?/, '').replace(/```$/, '');
-      blocks.push('<pre><code>' + escHtml(inner) + '</code></pre>');
-      return '\u0000B' + (blocks.length - 1) + '\u0000';
-    });
-    const lines = escHtml(src).split('\n');
+    /* The source is split into text parts and code parts. The old marker
+     * approach lost the code block when a line carried text after the
+     * closing fence, and it showed the marker itself to the user. */
+    const parts = [];
+    const fenceRe = /```[\s\S]*?```/g;
+    let last = 0;
+    let match = fenceRe.exec(src);
+    while (match !== null) {
+      if (match.index > last) parts.push({ code: false, text: src.slice(last, match.index) });
+      parts.push({ code: true, text: match[0].replace(/^```[a-zA-Z0-9_-]*\n?/, '').replace(/```$/, '') });
+      last = match.index + match[0].length;
+      match = fenceRe.exec(src);
+    }
+    if (last < src.length) parts.push({ code: false, text: src.slice(last) });
+
     const out = [];
     let list = null;
     const flushList = () => {
       if (list) { out.push('<ul>' + list.map((li) => '<li>' + inlineMd(li) + '</li>').join('') + '</ul>'); list = null; }
     };
-    for (const raw of lines) {
-      const line = raw.replace(/\s+$/, '');
-      const b = line.match(/^\u0000B(\d+)\u0000$/);
-      if (b) { flushList(); out.push(blocks[+b[1]]); continue; }
-      const h = line.match(/^(#{1,4})\s+(.*)/);
-      if (h) { flushList(); out.push('<h' + Math.min(h[1].length, 3) + '>' + inlineMd(h[2]) + '</h' + Math.min(h[1].length, 3) + '>'); continue; }
-      const li = line.match(/^\s*[-*•]\s+(.*)/) || line.match(/^\s*\d+[.)]\s+(.*)/);
-      if (li) { list = list || []; list.push(li[1]); continue; }
-      if (!line.trim()) { flushList(); continue; }
-      flushList();
-      out.push('<p>' + inlineMd(line) + '</p>');
+    for (const part of parts) {
+      if (part.code) {
+        flushList();
+        out.push('<pre><code>' + escHtml(part.text) + '</code></pre>');
+        continue;
+      }
+      const lines = escHtml(part.text).split('\n');
+      for (const raw of lines) {
+        const line = raw.replace(/\s+$/, '');
+        const h = line.match(/^(#{1,4})\s+(.*)/);
+        if (h) { flushList(); out.push('<h' + Math.min(h[1].length, 3) + '>' + inlineMd(h[2]) + '</h' + Math.min(h[1].length, 3) + '>'); continue; }
+        const li = line.match(/^\s*[-*•]\s+(.*)/) || line.match(/^\s*\d+[.)]\s+(.*)/);
+        if (li) { list = list || []; list.push(li[1]); continue; }
+        if (!line.trim()) { flushList(); continue; }
+        flushList();
+        out.push('<p>' + inlineMd(line) + '</p>');
+      }
     }
     flushList();
     return out.join('');
   }
 
   // ---------- context ----------
+  /* The section comes from the store, so the fields are strings. A helper
+   * keeps the builder safe when a field is not a string. */
+  function fieldText(s, key) {
+    const value = s ? s[key] : '';
+    return typeof value === 'string' ? value : '';
+  }
+
   function contextParts(s) {
-    const isPt = s.lang === 'pt';
+    const isPt = s && s.lang === 'pt';
     const defs = [
       ['role', isPt ? 'Descrição da vaga' : 'Job description'],
       ['master', isPt ? 'CV master' : 'Master CV'],
@@ -92,12 +113,12 @@
       ['tex', isPt ? 'CV.tex (LaTeX atual)' : 'CV.tex (current LaTeX)'],
     ];
     return defs
-      .filter(([k]) => (s[k] || '').trim())
-      .map(([k, label]) => '### ' + label + '\n\n<snap_' + k + '>\n' + s[k].trim() + '\n</snap_' + k + '>');
+      .filter(([k]) => fieldText(s, k).trim())
+      .map(([k, label]) => '### ' + label + '\n\n<snap_' + k + '>\n' + fieldText(s, k).trim() + '\n</snap_' + k + '>');
   }
 
   function buildSystem(s) {
-    const isPt = s.lang === 'pt';
+    const isPt = s && s.lang === 'pt';
     const parts = contextParts(s);
     const ctx = parts.length
       ? parts.join('\n\n---\n\n')
@@ -114,18 +135,36 @@ Answer ALWAYS in ENGLISH.
 Ground yourself ONLY in the section context below; do NOT invent experience, skills, or requirements. If something is missing from the context, say what is missing and where to fill it in the UI (Step 1 inputs · Step 2 markdown · Step 3 LaTeX/PDF).
 Roles: answer questions about the job, suggest concrete improvements (with ready-to-paste markdown/LaTeX snippets when useful), review the material, and help prepare the application.
 Be concise and direct; use short lists when helpful.`)
-      + '\n\n## CONTEXTO DA SEÇÃO "' + (s.name || '') + '"\n\n' + ctx;
+      + '\n\n## CONTEXTO DA SEÇÃO "' + fieldText(s, 'name') + '"\n\n' + ctx;
+  }
+
+  /* The history goes into the prompt. A large history costs tokens, and a
+   * model rejects a prompt that is too long. */
+  const HISTORY_MAX_CHARS = 24000;
+  const HISTORY_MAX_MESSAGES = 14;
+
+  function historyText(m) {
+    const content = m && m.content;
+    return typeof content === 'string' ? content : '';
   }
 
   function serializeHistory(chat) {
-    const tail = chat.slice(-14);
-    let lines = tail.map((m) => (m.role === 'user' ? 'Usuário' : 'Assistente') + ':\n' + m.content);
+    const list = Array.isArray(chat) ? chat : [];
+    const tail = list.slice(-HISTORY_MAX_MESSAGES);
+    const lines = tail.map((m) => (m.role === 'user' ? 'Usuário' : 'Assistente') + ':\n' + historyText(m));
     let total = 0;
     const kept = [];
     for (let i = lines.length - 1; i >= 0; i--) {
-      total += lines[i].length;
-      if (total > 24000 && kept.length) break;
+      const size = lines[i].length + 2;
+      if (total + size > HISTORY_MAX_CHARS && kept.length) break;
+      total += size;
       kept.unshift(lines[i]);
+    }
+    if (!kept.length) return '';
+    /* One message can be longer than the limit on its own. The newest part
+     * of it is the useful part. */
+    if (kept[0].length > HISTORY_MAX_CHARS - 2) {
+      kept[0] = kept[0].slice(-(HISTORY_MAX_CHARS - 2));
     }
     return kept.join('\n\n');
   }
@@ -250,13 +289,28 @@ Be concise and direct; use short lists when helpful.`)
   }
 
   // ---------- actions ----------
+  /* The clear button raises the number. A pending answer belongs to the old
+   * conversation and must not come back. */
+  let chatGeneration = 0;
+
   async function send() {
     const s = deps.getSection();
     const input = $('chat-input');
     const text = (input.value || '').trim();
-    if (!text || busy || !s) return;
+    if (!text) return;
+    if (!s) {
+      deps.toast('Create a section before you send a message.', 'warn');
+      return;
+    }
+    if (busy) {
+      /* The message is dropped without a hint. The user thinks the message
+       * was sent. */
+      deps.toast('Wait for the current answer.', 'warn');
+      return;
+    }
 
     if (!s.chat) s.chat = [];
+    const generation = chatGeneration;
     s.chat.push({ role: 'user', content: text, at: Date.now() });
     input.value = '';
     autogrow();
@@ -273,11 +327,14 @@ Be concise and direct; use short lists when helpful.`)
         system: buildSystem(s),
         context: serializeHistory(s.chat.slice(0, -1)),
       });
+      /* The conversation was cleared while the model worked. */
+      if (generation !== chatGeneration) return;
       s.chat.push({ role: 'assistant', content: reply, at: Date.now() });
       deps.touch(s);
       deps.saveAll();
       render();
     } catch (e) {
+      if (generation !== chatGeneration) return;
       renderError(e);
     } finally {
       busy = false;
@@ -297,6 +354,8 @@ Be concise and direct; use short lists when helpful.`)
     });
     if (!ok) return;
     s.chat = [];
+    /* The pending answer of the old conversation must not come back. */
+    chatGeneration++;
     deps.touch(s);
     deps.saveAll();
     render();

@@ -30,12 +30,15 @@ const DEFAULT_URLS = {
 };
 
 function tellCfg(config) {
+  const cfg = config && typeof config === 'object' ? config : {};
   const keys = {};
   const urls = {};
   LLM_VENDORS.forEach((v) => {
-    if (config.keys && config.keys[v]) keys[v] = config.keys[v];
-    if (config.urls && config.urls[v]) {
-      urls[v] = config.urls[v];
+    /* Only a string passes. A number or an object in the key map reaches
+     * the SDK as a header value and breaks the request. */
+    if (cfg.keys && typeof cfg.keys[v] === 'string' && cfg.keys[v]) keys[v] = cfg.keys[v];
+    if (cfg.urls && typeof cfg.urls[v] === 'string' && cfg.urls[v]) {
+      urls[v] = cfg.urls[v];
     } else if (DEFAULT_URLS[v]) {
       urls[v] = DEFAULT_URLS[v];
     } else {
@@ -46,9 +49,9 @@ function tellCfg(config) {
   // mirror them; otherwise zai keys/urls would be silently ignored.
   if (keys.zai && !keys.zhipu) keys.zhipu = keys.zai;
   if (urls.zai && !urls.zhipu) urls.zhipu = urls.zai;
-  const out = { model: config.model || 'g', keys, urls };
-  if (typeof config.customApi === 'string' && config.customApi) out.customApi = config.customApi;
-  if (typeof config.customHeaders === 'string' && config.customHeaders) out.customHeaders = config.customHeaders;
+  const out = { model: typeof cfg.model === 'string' && cfg.model ? cfg.model : 'g', keys, urls };
+  if (typeof cfg.customApi === 'string' && cfg.customApi) out.customApi = cfg.customApi;
+  if (typeof cfg.customHeaders === 'string' && cfg.customHeaders) out.customHeaders = cfg.customHeaders;
   return out;
 }
 
@@ -60,7 +63,8 @@ function customModelOf(model) {
 }
 
 function customHeadersOf(cfg) {
-  const raw = (cfg.customHeaders || '').trim();
+  const value = cfg && cfg.customHeaders;
+  const raw = (typeof value === 'string' ? value : '').trim();
   if (!raw) return {};
   let parsed = null;
   try {
@@ -76,7 +80,7 @@ function customHeadersOf(cfg) {
 
 function customTextOf(data, api) {
   if (api === 'responses') {
-    const out = Array.isArray(data.output) ? data.output : [];
+    const out = data && Array.isArray(data.output) ? data.output : [];
     for (let i = 0; i < out.length; i++) {
       const parts = out[i] && Array.isArray(out[i].content) ? out[i].content : [];
       for (let j = 0; j < parts.length; j++) {
