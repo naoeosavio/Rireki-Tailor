@@ -27,8 +27,8 @@ const lib = require('./fuzz_lib.js');
 
 const VENDORS = [
   'openai', 'anthropic', 'google', 'deepseek', 'xai',
-  'cerebras', 'fireworks', 'moonshotai', 'openrouter',
-  'alibaba', 'zai', 'custom',
+  'cerebras', 'moonshotai', 'openrouter',
+  'alibaba', 'zai', 'meta', 'xiaomi', 'custom',
 ];
 
 let passed = 0;

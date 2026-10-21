@@ -137,8 +137,9 @@ making progress. The loop is the one of the core (`run_primitive_loop`).
   tags and refuses every command (no-exec). The model port of the app calls the sdk
   (`TellSDK.create_ask_ai`) or the custom endpoint.
 - Model by alias or full spec (`j`, `d`, `g`, `openai:gpt-5.6-sol:high`…), one-shot (no streaming).
-- **Global config** in Step 1: a grid of 12 vendor cards (openai, anthropic, google, deepseek,
-  xai, cerebras, fireworks, moonshotai, openrouter, alibaba, zai, custom). A click shows the
+- **Global config** in Step 1: a grid of 13 vendor cards (openai, anthropic, google, deepseek,
+  xai, cerebras, moonshotai, openrouter, alibaba, zai, meta, xiaomi, custom) — the vendors of
+  the sdk. A click shows the
   detail block: model, provider key (with eye toggle), connection test. The `custom` detail
   adds endpoint URL, API type (`auto`/`chat`/`responses`/`messages`), the model list of the
   endpoint (the button asks the endpoint and fills the picker) and extra JSON headers;

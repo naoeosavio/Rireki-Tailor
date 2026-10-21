@@ -7,10 +7,12 @@
 // direct way works out of the box; replace any entry with a CORS proxy
 // URL as fallback when the browser blocks the direct call.
 
+/* The vendors of the sdk. The list follows the sdk: a vendor that the sdk
+ * does not know cannot be called (`Unsupported vendor for model`). */
 const LLM_VENDORS = [
   'openai', 'anthropic', 'google', 'deepseek', 'xai',
-  'cerebras', 'fireworks', 'moonshotai', 'openrouter',
-  'alibaba', 'zai', 'custom',
+  'cerebras', 'moonshotai', 'openrouter',
+  'alibaba', 'zai', 'meta', 'xiaomi', 'custom',
 ];
 
 /* The messages API needs a token limit. The value is the cap of one answer
@@ -18,22 +20,24 @@ const LLM_VENDORS = [
 const CUSTOM_MAX_TOKENS = 8192;
 
 // Official direct base URLs, pre-filled by default (primary way).
-// Keep in sync with docs/llm-base-url.md. Loaded before app.js,
-// so app.js backfills them into the visible config form.
+// They are the defaults of the sdk, so the app and the sdk always talk to
+// the same endpoint. Keep in sync with docs/llm-base-url.md. Loaded
+// before app.js, so app.js backfills them into the visible config form.
 // Vendors without entry here have no reliable default: fill the
 // URL field (custom: your own endpoint URL) or the SDK call fails.
 const DEFAULT_URLS = {
   openai: 'https://api.openai.com/v1',
-  anthropic: 'https://api.anthropic.com',
+  anthropic: 'https://api.anthropic.com/v1',
   google: 'https://generativelanguage.googleapis.com/v1beta',
-  deepseek: 'https://api.deepseek.com/v1',
+  deepseek: 'https://api.deepseek.com',
   xai: 'https://api.x.ai/v1',
   cerebras: 'https://api.cerebras.ai/v1',
-  fireworks: 'https://api.fireworks.ai/inference/v1',
   moonshotai: 'https://api.moonshot.ai/v1',
   openrouter: 'https://openrouter.ai/api/v1',
   alibaba: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
   zai: 'https://api.z.ai/api/paas/v4',
+  meta: 'https://api.meta.ai/v1',
+  xiaomi: 'https://api.xiaomimimo.com/v1',
 };
 
 function tellCfg(config) {

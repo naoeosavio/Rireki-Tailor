@@ -1,8 +1,8 @@
 # LLM providers — when a Base URL is needed
 
-Guide to the **LLM** panel (setup block, top of the app): a **Model** field + 12 vendor
+Guide to the **LLM** panel (setup block, top of the app): a **Model** field + 13 vendor
 rows (`openai`, `anthropic`, `google`, `deepseek`, `xai`, `cerebras`,
-`fireworks`, `moonshotai`, `openrouter`, `alibaba`, `zai`, `custom`),
+`moonshotai`, `openrouter`, `alibaba`, `zai`, `meta`, `xiaomi`, `custom`),
 each with a **key** and a **base url**.
 Everything lives in `localStorage["riki.config"]` (`{ model, keys, urls, models }`) and
 is handed to the core runtime (`src/js/llm.js`). The **Test connection** button
@@ -50,17 +50,23 @@ fill the field in.
 | Vendor | URL required? | Pre-filled default | Model example |
 |---|---|---|---|
 | `openai` | No (has a default) | `https://api.openai.com/v1` | `gpt-4o-mini` |
-| `anthropic` | No (has a default) | `https://api.anthropic.com` | `claude-sonnet-4-6` |
+| `anthropic` | No (has a default) | `https://api.anthropic.com/v1` | `claude-sonnet-4-6` |
 | `google` | No (has a default) | `https://generativelanguage.googleapis.com/v1beta` | `gemini-2.5-flash` |
-| `deepseek` | No (has a default) | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| `deepseek` | No (has a default) | `https://api.deepseek.com` | `deepseek-chat` |
 | `xai` | No (has a default) | `https://api.x.ai/v1` | `grok-4` |
 | `cerebras` | No (has a default) | `https://api.cerebras.ai/v1` | `llama-3.3-70b` |
-| `fireworks` | No (has a default) | `https://api.fireworks.ai/inference/v1` | `llama-v3p1-8b-instruct` |
 | `moonshotai` | No (has a default) | `https://api.moonshot.ai/v1` | `kimi-k2` |
 | `openrouter` | **Yes** | `https://openrouter.ai/api/v1` | `z-ai/glm-5.3-flash` |
 | `alibaba` | No (has an intl default) | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` | `alibaba:qwen-max` |
 | `zai` | No (has a default) | `https://api.z.ai/api/paas/v4` | `zai:glm-5.3` (or the `z` shortcut) |
+| `meta` | No (has a default) | `https://api.meta.ai/v1` | `meta:muse-spark-1.3` (or the `m` shortcut) |
+| `xiaomi` | No (has a default) | `https://api.xiaomimimo.com/v1` | `xiaomi:mimo-v2.6-pro` (or the `mi` shortcut) |
 | `custom` | **Yes** | — (your own endpoint URL) | `custom:kimi-k3` |
+
+The rows are the vendors of the sdk. A vendor that the sdk does not know (for example
+Fireworks) has no row: the sdk answers `Unsupported vendor for model`. Use the `custom` row
+for it — any OpenAI-compatible endpoint works there, and the sdk infers the wire from the
+model id.
 
 Routing details (SDK in `src/vendor/tell/browser.js`, custom shim in `src/js/llm.js`):
 

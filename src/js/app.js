@@ -1785,6 +1785,8 @@
   // "vendor:" — saving writes the full "vendor:name" spec back.
   let selectedVendor = null;
 
+  /* The cards follow the vendors of the sdk. A vendor that the sdk does not
+   * know cannot be called, so it has no card. */
   const VENDOR_META = [
     { id: 'openai', name: 'OpenAI', desc: 'api.openai.com' },
     { id: 'anthropic', name: 'Anthropic', desc: 'api.anthropic.com' },
@@ -1792,11 +1794,12 @@
     { id: 'deepseek', name: 'DeepSeek', desc: 'api.deepseek.com' },
     { id: 'xai', name: 'xAI', desc: 'api.x.ai' },
     { id: 'cerebras', name: 'Cerebras', desc: 'api.cerebras.ai' },
-    { id: 'fireworks', name: 'Fireworks', desc: 'api.fireworks.ai' },
     { id: 'moonshotai', name: 'Moonshot AI', desc: 'api.moonshot.ai' },
     { id: 'openrouter', name: 'OpenRouter', desc: 'openrouter.ai' },
     { id: 'alibaba', name: 'Alibaba', desc: 'dashscope-intl.aliyuncs.com' },
     { id: 'zai', name: 'Z.ai', desc: 'api.z.ai' },
+    { id: 'meta', name: 'Meta', desc: 'api.meta.ai' },
+    { id: 'xiaomi', name: 'Xiaomi', desc: 'api.xiaomimimo.com' },
     { id: 'custom', name: 'Custom', desc: 'Sua URL (formato OpenAI)' },
   ];
 

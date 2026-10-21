@@ -359,6 +359,27 @@ test('tellCfg: the result is stable after a second pass', () => {
   });
 });
 
+test('the vendors of the app are the vendors of the sdk', () => {
+  const sdk = globalThis.window.TellSDK;
+  const known = new Set();
+  Object.keys(sdk.MODELS).forEach((alias) => {
+    known.add(sdk.resolve_model_spec(alias).vendor);
+  });
+  /* The self-hosted endpoints of the sdk need a url only. The custom row
+   * of the app covers them. */
+  known.delete('local');
+  known.delete('vast');
+  known.forEach((vendor) => {
+    assert.ok(llm.LLM_VENDORS.indexOf(vendor) !== -1, 'the app misses the vendor ' + vendor);
+  });
+  /* Every vendor of the app must be known by the sdk: a spec of a vendor
+   * that the sdk does not know fails with "Unsupported vendor for model". */
+  llm.LLM_VENDORS.forEach((vendor) => {
+    const spec = sdk.resolve_model_spec(vendor + ':some-model');
+    assert.strictEqual(spec.vendor, vendor, 'the sdk does not know the vendor ' + vendor);
+  });
+});
+
 test('customModelOf: the answer is a name or nothing', () => {
   lib.fuzz('customModelOf', CONFIG_SEEDS, 300, (input) => {
     const name = llm.customModelOf(field(input, 'model'));
