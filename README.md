@@ -65,6 +65,24 @@ bar, so the work area keeps the space.
    **"Job assistant" chat** answers questions and suggests improvements based on the
    section's context.
 
+### Fix with LLM — the chain loop
+
+**Fix with LLM** is a chain of up to **8 rounds** (the cap of the core,
+`DEFAULT_MAX_CHAIN_STEPS`):
+
+1. The model repairs the `.tex` (the broken document + the last compiler error).
+2. The app **compiles** the answer with the wasm engine.
+3. A failed compile comes back as a failed command, and the **next round gets the
+   new error** — the model sees its own last attempt and the real log.
+4. The chain stops at the first document that compiles (the PDF is shown right
+   away, without a second compile) or when the budget is spent.
+
+If the chain ends without a document that compiles, the app says so and asks the
+user to **rewrite the `.tex` by hand** (or to regenerate it with *Convert to
+LaTeX*). The broken `.tex` is never replaced by a broken answer. The chain also
+stops early when the model returns the very same document again — it is not
+making progress. The loop is the one of the core (`run_primitive_loop`).
+
 ### Global menu (sidebar) and library
 
 - Open buttons: **hamburger** (Library tab) and **LLM** in the header (goes to Step 1); sidebar closes with

@@ -4,9 +4,32 @@ Guide to the **LLM** panel (setup block, top of the app): a **Model** field + 12
 rows (`openai`, `anthropic`, `google`, `deepseek`, `xai`, `cerebras`,
 `fireworks`, `moonshotai`, `openrouter`, `alibaba`, `zai`, `custom`),
 each with a **key** and a **base url**.
-Everything lives in `localStorage["riki.config"]` (`{ model, keys, urls }`) and
-is handed to `TellSDK.tell` (`src/js/llm.js`). The **Test connection** button
+Everything lives in `localStorage["riki.config"]` (`{ model, keys, urls, models }`) and
+is handed to the core runtime (`src/js/llm.js`). The **Test connection** button
 runs `llmTest()` (expected reply: `OK — model replied: ...`).
+
+The **Model** field completes with the aliases of the sdk (152 entries) of the chosen
+provider, and the hint under the field shows the resolved spec
+(`openai · gpt-6.1-sol · medium`). Each provider row keeps its own model in
+`config.models`, so switching rows and coming back keeps the model.
+
+## The key on the server (dev server / VPS)
+
+The dev server can hold the key, so the browser never sees it and the call never needs CORS.
+
+| Env | Meaning |
+|---|---|
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY` (or `GEMINI_API_KEY`), `XAI_API_KEY`, `DEEPSEEK_API_KEY`, `CEREBRAS_API_KEY`, `MOONSHOTAI_API_KEY`, `OPENROUTER_API_KEY`, `ALIBABA_API_KEY`, `ZHIPU_API_KEY` | the key of the vendor |
+| `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, … | the base url of the vendor (a proxy, for example) |
+| `TELL_MODEL` | the default model of the server (an alias or a full spec) |
+
+The mapping is the one of the core (`build_sdk_config_from_env`), so the CLI and this server
+read the same env. The browser asks `GET /api/llm/config` what the server holds and sends the
+call to `POST /api/llm` when the browser has no key of that vendor. A key in the browser wins.
+
+The endpoint calls only the vendors of the env, so it is not an open proxy. It answers 503
+when the server holds no key, 403 to a cross-origin request, 400 to a payload without a
+message, and 413 to a payload over the caps of the core.
 
 ## The Base URL field rule
 
@@ -52,8 +75,16 @@ Routing details (SDK in `src/vendor/tell/browser.js`, custom shim in `src/js/llm
 * `custom` is a generic user-supplied endpoint (any OpenAI-shaped API).
   The app calls it directly with fetch, not through the SDK: `custom:<model>`
   posts to `<url>/chat/completions` (or `<url>/responses` with API type
-  `responses`), sends the key as `Bearer` auth plus the extra JSON headers,
-  and reads the reply text. Keyless endpoints work: only the URL is required.
+  `responses`, or `<url>/messages` with API type `messages`), sends the key as
+  `Bearer` auth (the `messages` wire uses `x-api-key` plus
+  `anthropic-version`) plus the extra JSON headers, and reads the reply text.
+  Keyless endpoints work: only the URL is required.
+  The API type `auto` lets the sdk infer the wire from the model id: a
+  `gpt-`, `grok-` or `muse-` id uses `responses`, a `claude-` id uses
+  `messages`, the rest uses `chat`.
+  The **model list** button asks the endpoint (`GET <url>/models`) and fills
+  the picker with the ids and the wire of each one. The endpoint needs a key
+  for that request.
   Example (opencode zen): URL `https://opencode.ai/zen/go/v1`, model
   `muse-spark-1.3-contributor`, key `$OPENCODE_API_KEY`, API `chat`,
   headers `{"x-opencode-session":"$OPENCODE_SESSION_ID"}`.
@@ -105,4 +136,4 @@ slug with the `/`.
 
 Keys stay only in your browser's `localStorage`. The JSON export
 (`riki-secoes-*.json`, `exportSections` in `src/js/app.js`) already strips the
-keys — it includes only `model` and `urls`.
+keys — it includes only `model`, `urls` and `models`.
