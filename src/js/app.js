@@ -1227,7 +1227,7 @@
     // Expanded editor hides every model button. Collapsed editor shows
     // them all back: the 4 model cards plus the user template row.
     const expanded = Boolean(det && !det.hidden && det.open);
-    const grid = document.querySelector('.model-grid');
+    const grid = $('template-grid');
     if (grid) grid.hidden = expanded;
     const hint = document.querySelector('#model-hint');
     if (hint) hint.hidden = expanded;
@@ -1713,7 +1713,7 @@
       if (i + 1 === n) d.setAttribute('aria-current', 'step');
       else d.removeAttribute('aria-current');
     });
-    step(n).style.display = 'block';
+    step(n).style.display = 'flex';
     if (n === 3 && window.Chat) Chat.render();
   }
 

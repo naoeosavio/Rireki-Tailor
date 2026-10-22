@@ -68,6 +68,9 @@ html[data-theme="light"] {
 * { box-sizing: border-box; }
 body {
   margin: 0;
+  display: flex; flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
   font-family: var(--font);
   background: var(--bg);
   color: var(--fg);
@@ -120,6 +123,7 @@ a:hover { text-decoration: underline; }
 
 /* ---------- header ---------- */
 .app-header {
+  flex: none;
   padding: 12px 20px 10px;
   border-bottom: 1px solid var(--border);
   background: var(--bg2);
@@ -170,7 +174,8 @@ html[data-theme="light"] .status.ok { color: #047857; }
 /* ---------- stepper ---------- */
 .steps {
   display: flex; gap: 10px; align-items: center;
-  padding: 12px 20px 0;
+  flex: none;
+  padding: 0;
 }
 .step-dot {
   display: inline-flex; align-items: center; gap: 8px;
@@ -200,12 +205,23 @@ html[data-theme="light"] .step-dot.done { color: #047857; }
 .step-line { height: 1px; flex: 0 1 60px; background: var(--border-strong); }
 
 /* ---------- layout ---------- */
-main { padding: 18px 20px 26px; }
+main {
+  flex: 1 1 auto;
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 14px 20px 16px;
+}
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .grid-3 {
   display: grid; gap: 16px; align-items: stretch;
   grid-template-columns: minmax(300px, 1fr) minmax(360px, 1.15fr) minmax(300px, 380px);
 }
+/* The panel carries the step and takes the height the setup block leaves. */
+.panel {
+  display: flex; flex-direction: column; gap: 14px;
+  flex: 1 1 auto;
+}
+.panel > .grid-2,
+.panel > .grid-3 { flex: 1 1 auto; min-height: 0; }
 
 .card {
   background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
@@ -221,16 +237,16 @@ main { padding: 18px 20px 26px; }
 }
 .actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 
-.pdf-card { min-height: 560px; }
+.pdf-card { min-height: 0; }
 #viewer {
-  width: 100%; flex: 1; min-height: 420px;
+  width: 100%; flex: 1; min-height: 180px;
   border: 1px solid var(--border); border-radius: var(--radius-s);
   background: #fff;
 }
 .log {
   background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius-s);
   padding: 10px; font: 11px/1.5 var(--mono);
-  max-height: 150px; overflow: auto; white-space: pre-wrap;
+  max-height: 120px; overflow: auto; white-space: pre-wrap;
   margin: 0; flex: none; min-height: 42px; color: var(--muted);
 }
 
@@ -314,12 +330,16 @@ textarea::placeholder, input::placeholder { color: color-mix(in srgb, var(--mute
 .ta-foot { display: flex; justify-content: flex-end; min-height: 14px; }
 .counter { color: var(--muted); font-size: .74em; font-variant-numeric: tabular-nums; }
 
-/* Large editors fill the available viewport height. The floor keeps
-   short screens usable. The cards already stretch to the row height. */
-#role, #master, #pitch, #template, #cvOut, #cover, #tex {
+/* The step editors fill the panel height. The floor keeps short screens
+   usable: the page scrolls instead of hiding the action row. */
+#role, #pitch, #cvOut, #cover, #tex {
   flex: 1 1 0;
-  min-height: 220px;
-  min-height: max(220px, calc(100vh - 320px));
+  min-height: 160px;
+}
+/* The setup editors keep a fixed height: the setup block scrolls. */
+#master, #template {
+  flex: 0 0 auto;
+  min-height: 200px;
 }
 
 /* ---------- visual template model picker ---------- */
@@ -337,6 +357,11 @@ textarea::placeholder, input::placeholder { color: color-mix(in srgb, var(--mute
   padding: 16px; gap: 8px; line-height: 1.4;
   min-height: 148px;
 }
+/* Providers stay compact: the 55vh cap used to cut the third row. */
+#vendor-grid { max-height: none; }
+#vendor-grid .model-card { min-height: 104px; padding: 12px 14px; gap: 6px; }
+#vendor-grid .model-title { font-size: 1.05em; }
+#vendor-grid .model-desc { font-size: .85em; }
 .model-card.selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
@@ -397,9 +422,8 @@ textarea::placeholder, input::placeholder { color: color-mix(in srgb, var(--mute
 .check.toggle input:focus-visible + .toggle-track { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .actions-row {
-  display: flex; gap: 10px; margin-top: 16px; align-items: center; flex-wrap: wrap;
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
 }
-.actions-row.tight { margin-top: 0; }
 
 /* ---------- toasts ---------- */
 .toasts {
@@ -513,8 +537,9 @@ textarea::placeholder, input::placeholder { color: color-mix(in srgb, var(--mute
 
 /* ---------- setup block (config + CV base) ---------- */
 .setup {
+  flex: none;
   border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--bg2); margin-bottom: 14px; box-shadow: var(--shadow-s);
+  background: var(--bg2); box-shadow: var(--shadow-s);
 }
 .setup-bar {
   display: flex; align-items: center; gap: 10px;
@@ -550,7 +575,7 @@ textarea::placeholder, input::placeholder { color: color-mix(in srgb, var(--mute
 .key-wrap select { flex: 1; min-width: 0; }
 
 /* ---------- chat ---------- */
-.chat-card { min-height: 560px; }
+.chat-card { min-height: 0; }
 .chat-context { display: flex; gap: 6px; flex-wrap: wrap; }
 .chat-chip {
   font-size: .72em; color: var(--muted);
@@ -560,7 +585,7 @@ textarea::placeholder, input::placeholder { color: color-mix(in srgb, var(--mute
 .chat-chip.off { opacity: .45; text-decoration: line-through; }
 
 .chat-messages {
-  flex: 1; min-height: 260px; max-height: 560px;
+  flex: 1; min-height: 140px;
   overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
   padding: 4px 2px;
 }
@@ -625,14 +650,16 @@ textarea::placeholder, input::placeholder { color: color-mix(in srgb, var(--mute
 
 /* ---------- footer ---------- */
 footer {
-  padding: 14px 20px; border-top: 1px solid var(--border);
+  flex: none;
+  padding: 10px 20px; border-top: 1px solid var(--border);
   color: var(--muted); font-size: .8em; background: var(--bg2);
 }
 
 /* ---------- responsivo ---------- */
-@media (max-width: 1280px) {
+/* Three columns need about 1040 px. Below that, the chat moves to a row. */
+@media (max-width: 1100px) {
   .grid-3 { grid-template-columns: 1fr 1.15fr; }
-  .chat-card { grid-column: 1 / -1; min-height: 480px; }
+  .chat-card { grid-column: 1 / -1; }
 }
 @media (max-width: 900px) {
   .grid-2, .grid-3 { grid-template-columns: 1fr; }

@@ -182,7 +182,7 @@
             </span>
           </div>
           <p class="hint" id="model-hint">Selecione o estilo visual que mais combina com seu perfil profissional:</p>
-          <div class="model-grid" role="group" aria-label="Visual template models">
+          <div class="model-grid" id="template-grid" role="group" aria-label="Visual template models">
             <button type="button" class="model-card" data-model="modern" aria-pressed="false">
               <span class="model-badge">Moderno</span>
               <span class="model-title">Tech &amp; Inovação</span>
@@ -305,7 +305,7 @@
 
   <!-- ============ STEP 3 — LaTeX to PDF ============ -->
   <section class="panel" id="panel3" style="display:none">
-    <div class="actions-row tight">
+    <div class="actions-row">
       <button id="btn-tex-toggle" class="ghost" aria-expanded="true"><svg class="ic"><use href="#i-file"/></svg> Ver / Editar o código LaTeX (avançada)</button>
     </div>
     <div class="grid-3" id="step3-grid">
@@ -324,7 +324,7 @@
 
       <div class="card pdf-card">
         <div class="card-head"><h2>PDF</h2></div>
-        <div class="actions-row tight">
+        <div class="actions-row">
           <button id="btn-compile" class="primary big"><svg class="ic"><use href="#i-file"/></svg> Compile PDF</button>
           <button id="btn-fix-tex" class="ghost" title="Send the current .tex plus the last error log to the LLM and apply the fix"><svg class="ic"><use href="#i-bot"/></svg> Fix with LLM</button>
           <button id="dl-pdf" class="ghost"><svg class="ic"><use href="#i-download"/></svg> PDF</button>

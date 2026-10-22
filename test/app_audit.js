@@ -154,7 +154,7 @@ test('load: a section with a non-array chat does not break the app', async (page
 
   await page.click('[data-nav="3"]');
   await page.waitForTimeout(400);
-  assert.strictEqual(await page.$eval('#panel3', (p) => p.style.display), 'block', 'step 3 did not open');
+  assert.strictEqual(await page.$eval('#panel3', (p) => p.style.display), 'flex', 'step 3 did not open');
   assert.ok((await page.textContent('#section-select')).indexOf('Invalid Date') === -1, 'option shows Invalid Date');
 
   await page.fill('#chat-input', 'oi');
@@ -623,6 +623,41 @@ test('config: the model list of the custom endpoint fills the picker', async (pa
   assert.strictEqual(await page.inputValue('#cfg-model'), 'gpt-5.4-mini', 'the model field was not filled');
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('riki.config')).model);
   assert.strictEqual(stored, 'custom:gpt-5.4-mini', 'the model was not saved: ' + stored);
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+/* ================================================================== *
+ * the template LaTeX editor hides only the template cards
+ * ================================================================== */
+
+test('setup: opening the template editor keeps the provider cards', async (page) => {
+  await seed(page, {
+    'riki.config': { model: 'openrouter:minimax/minimax-m3.1-flash:free', setupDone: true },
+    'riki.sections': { s1: section({ name: 'A', template: 'TEMPLATE' }) },
+    'riki.active': 's1',
+  });
+  /* A ready config starts collapsed. */
+  if (await page.$eval('#setup-block', (e) => e.classList.contains('collapsed'))) {
+    await page.click('#btn-setup-toggle');
+    await page.waitForTimeout(200);
+  }
+  const vendors = await page.$$eval('#vendor-grid .model-card', (b) => b.length);
+  assert.ok(vendors > 0, 'no provider card rendered');
+
+  await page.click('.tex-details summary');
+  await page.waitForTimeout(200);
+  const state = await page.evaluate(() => {
+    const templateGrid = document.querySelector('#template-grid');
+    return {
+      editorOpen: document.querySelector('.tex-details').open,
+      vendorsShown: !document.querySelector('#vendor-grid').hidden,
+      vendors: document.querySelectorAll('#vendor-grid .model-card').length,
+      templateHidden: Boolean(templateGrid && templateGrid.hidden),
+    };
+  });
+  assert.ok(state.editorOpen, 'the template editor did not open');
+  assert.ok(state.vendorsShown && state.vendors > 0, 'the provider cards disappeared');
+  assert.ok(state.templateHidden, 'the visual model cards stayed over the editor');
   assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
 });
 

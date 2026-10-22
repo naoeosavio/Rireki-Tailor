@@ -96,9 +96,9 @@ const { chromium } = require('playwright');
 
   // stepper
   await page.click('[data-nav="2"]');
-  console.log('step2 visible:', (await page.$eval('#panel2', (p) => p.style.display)) === 'block');
+  console.log('step2 visible:', (await page.$eval('#panel2', (p) => p.style.display)) === 'flex');
   await page.click('[data-nav="3"]');
-  console.log('step3 visible:', (await page.$eval('#panel3', (p) => p.style.display)) === 'block');
+  console.log('step3 visible:', (await page.$eval('#panel3', (p) => p.style.display)) === 'flex');
 
   // compile with an empty .tex → warn
   await page.click('#btn-compile');
