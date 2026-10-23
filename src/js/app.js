@@ -499,7 +499,8 @@
         arr.forEach((entry) => list.appendChild(libEntryEl(kind, entry)));
       });
     renderBuiltinModels();
-    renderUserModels();
+    renderLibChips('user-models', 'template');
+    renderLibChips('master-models', 'master');
     renderModelCards();
   }
 
@@ -747,6 +748,9 @@
     const entry = { id: 'x' + Date.now().toString(36), name: name.trim() || defName, content };
     if (kind === 'master') entry.lang = s.lang;
     arr.push(entry);
+    /* The saved entry is the source of the field now: show it selected. */
+    if (kind === 'master') s.masterId = entry.id;
+    else s.templateId = entry.id;
     saveAll();
     renderLibrary();
     renderLibSelects();
@@ -1188,25 +1192,27 @@
     }
   }
 
-  // Second line with the user library templates. Visible while the
-  // user has at least one template. A click copies it into the section.
-  function renderUserModels() {
-    const list = $('user-models');
+  // Library chips under the master and template fields. A click copies
+  // the entry into the section. A master chip shows the language.
+  function renderLibChips(listId, kind) {
+    const list = $(listId);
     if (!list) return;
-    const arr = libArr('template');
+    const arr = libArr(kind);
     list.innerHTML = '';
     list.hidden = arr.length === 0;
     if (!arr.length) return;
     const s = active();
+    const cur = s ? (kind === 'master' ? s.masterId : s.templateId) : null;
     arr.forEach((e) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'user-tpl';
-      if (s && s.templateId === e.id) b.classList.add('selected');
-      b.textContent = e.name || 'Unnamed';
+      const on = Boolean(cur && cur === e.id);
+      if (on) b.classList.add('selected');
+      b.textContent = (e.name || 'Unnamed') + (kind === 'master' && e.lang ? ' · ' + e.lang.toUpperCase() : '');
       b.title = 'Use "' + (e.name || 'Unnamed') + '" in this section';
-      b.setAttribute('aria-pressed', String(s && s.templateId === e.id));
-      b.addEventListener('click', () => applyLibToSection('template', e.id));
+      b.setAttribute('aria-pressed', String(on));
+      b.addEventListener('click', () => applyLibToSection(kind, e.id));
       list.appendChild(b);
     });
   }
@@ -1253,7 +1259,8 @@
       hidePdf();
       updateAllCounters();
       renderLibSelects();
-      renderUserModels();
+      renderLibChips('user-models', 'template');
+      renderLibChips('master-models', 'master');
       renderModelCards();
       if (window.Chat) Chat.render();
       return;
@@ -1264,7 +1271,8 @@
     $('lang').value = s.lang;
     if (pdfSectionId !== activeId) hidePdf();
     renderLibSelects();
-    renderUserModels();
+    renderLibChips('user-models', 'template');
+    renderLibChips('master-models', 'master');
     renderModelCards();
     renderSetupSummary();
     updateAllCounters();

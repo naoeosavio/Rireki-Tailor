@@ -9,6 +9,8 @@
 !docs/**/*
 !docs/*
 !docs/
+!tasks/
+!tasks/**
 !src/
 !src/**
 !src/**

@@ -662,6 +662,76 @@ test('setup: opening the template editor keeps the provider cards', async (page)
 });
 
 /* ================================================================== *
+ * an open setup adds page height, it does not squeeze the step
+ * ================================================================== */
+
+test('setup: an open setup keeps the step height', async (page) => {
+  await seed(page, {
+    'riki.config': { setupDone: true },
+    'riki.sections': { s1: section({ name: 'A' }) },
+    'riki.active': 's1',
+  });
+  /* A ready config starts collapsed. */
+  if (!(await page.$eval('#setup-block', (e) => e.classList.contains('collapsed')))) {
+    await page.click('#btn-setup-toggle');
+    await page.waitForTimeout(200);
+  }
+  const size = () => page.evaluate(() => ({
+    panel: document.querySelector('#panel1').getBoundingClientRect().height,
+    editor: document.querySelector('#role').getBoundingClientRect().height,
+    master: document.querySelector('#master').getBoundingClientRect().height,
+    docH: document.documentElement.scrollHeight,
+    viewH: window.innerHeight,
+  }));
+  const before = await size();
+  await page.click('#btn-setup-toggle');
+  await page.waitForTimeout(250);
+  const after = await size();
+  assert.ok(Math.abs(after.panel - before.panel) < 1, 'the step shrank: ' + before.panel + ' → ' + after.panel);
+  assert.ok(Math.abs(after.editor - before.editor) < 1, 'the editor shrank: ' + before.editor + ' → ' + after.editor);
+  assert.ok(Math.abs(after.master - after.editor) < 1, 'the master editor differs from the step editor: ' + after.master + ' vs ' + after.editor);
+  assert.ok(after.docH > after.viewH, 'the open setup did not add page height');
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+/* ================================================================== *
+ * library: master entries show as chips in the setup
+ * ================================================================== */
+
+test('library: a master entry shows as a chip and can be applied', async (page) => {
+  await seed(page, {
+    'riki.sections': { s1: section({ name: 'A', master: 'LOCAL MASTER', template: 'TEMPLATE' }) },
+    'riki.active': 's1',
+    'riki.library': {
+      masters: [{ id: 'm1', name: 'Master OAL', lang: 'pt', content: 'LIB MASTER' }],
+      templates: [],
+    },
+  });
+  const chips = await page.$$eval('#master-models .user-tpl', (b) => b.map((x) => x.textContent));
+  assert.ok(chips.some((t) => t.indexOf('Master OAL') !== -1), 'master chip missing: ' + JSON.stringify(chips));
+
+  await page.click('#master-models .user-tpl');
+  await page.waitForTimeout(300);
+  assert.strictEqual(await page.inputValue('#master'), 'LIB MASTER', 'the chip did not apply the master');
+  const selected = await page.$eval('#master-lib', (s) => s.options[s.selectedIndex].textContent);
+  assert.ok(selected.indexOf('Master OAL') !== -1, 'the select does not show the master: ' + selected);
+
+  /* Save the field as a new master: the section links to the new entry. */
+  await page.click('[data-save-model="master"]');
+  await page.waitForSelector('.modal-input');
+  await page.fill('.modal-input', 'Chip Master');
+  await page.click('.modal-foot .primary');
+  await page.waitForTimeout(400);
+  const after = await page.evaluate(() => ({
+    chips: Array.from(document.querySelectorAll('#master-models .user-tpl')).map((b) => ({ text: b.textContent, on: b.classList.contains('selected') })),
+    selected: (() => { const s = document.querySelector('#master-lib'); return s.options[s.selectedIndex].textContent; })(),
+  }));
+  assert.ok(after.chips.some((c) => c.text.indexOf('Chip Master') !== -1), 'the saved master has no chip');
+  assert.ok(after.selected.indexOf('Chip Master') !== -1, 'the saved master is not selected: ' + after.selected);
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+/* ================================================================== *
  * the key on the server and the stop button
  * ================================================================== */
 

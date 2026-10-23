@@ -222,6 +222,16 @@ main {
 }
 .panel > .grid-2,
 .panel > .grid-3 { flex: 1 1 auto; min-height: 0; }
+/* An open setup adds page height, it does not squeeze the step. The step
+ * keeps its collapsed height (viewport minus the shell). 290px = header
+ * 114 + footer 38 + main padding 30 + gaps 28 + setup bar 44 + stepper 36.
+ * This is a minimum only: a taller shell costs a scroll, never a cut. */
+@media (min-width: 901px) {
+  .panel {
+    min-height: calc(100vh - 290px);
+    min-height: calc(100dvh - 290px);
+  }
+}
 
 .card {
   background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
@@ -340,6 +350,15 @@ textarea::placeholder, input::placeholder { color: color-mix(in srgb, var(--mute
 #master, #template {
   flex: 0 0 auto;
   min-height: 200px;
+}
+/* The setup editors match the job editor of the active step. The step
+ * editor is the panel height minus its chrome: 290px shell + 56px action
+ * row + 94px card = 440px. This is a minimum; a short window keeps 200px. */
+@media (min-width: 901px) {
+  #master, #template {
+    min-height: max(200px, calc(100vh - 440px));
+    min-height: max(200px, calc(100dvh - 440px));
+  }
 }
 
 /* ---------- visual template model picker ---------- */
