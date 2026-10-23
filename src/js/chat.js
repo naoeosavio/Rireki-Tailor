@@ -17,6 +17,7 @@
     cvOut: 'CV_OUT.md',
     cover: 'cover.md',
     tex: 'CV.tex',
+    coverTex: 'cover.tex',
   };
 
   const QUICK_ASKS = [
@@ -111,6 +112,7 @@
       ['cvOut', isPt ? 'CV_OUT.md (CV gerado p/ vaga)' : 'CV_OUT.md (tailored CV)'],
       ['cover', isPt ? 'cover.md (pitch)' : 'cover.md (pitch)'],
       ['tex', isPt ? 'CV.tex (LaTeX atual)' : 'CV.tex (current LaTeX)'],
+      ['coverTex', isPt ? 'cover.tex (LaTeX da carta)' : 'cover.tex (cover LaTeX)'],
     ];
     return defs
       .filter(([k]) => fieldText(s, k).trim())

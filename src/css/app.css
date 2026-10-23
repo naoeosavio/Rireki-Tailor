@@ -246,6 +246,13 @@ main {
   gap: 8px; flex-wrap: wrap; min-height: 28px;
 }
 .actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+/* CV.tex and cover.tex tabs replace the card title when both files exist. */
+.tex-tabs { display: flex; gap: 4px; }
+.tex-tab {
+  padding: 3px 10px; font-size: .82em; font-weight: 600;
+  color: var(--muted); background: var(--bg3);
+}
+.tex-tab.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 
 .pdf-card { min-height: 0; }
 #viewer {

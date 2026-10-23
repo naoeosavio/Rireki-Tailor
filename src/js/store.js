@@ -133,6 +133,8 @@ function normalizeSection(raw) {
     cover: storeText(src.cover),
     tex: storeText(src.tex),
     texHash: storeText(src.texHash),
+    coverTex: storeText(src.coverTex),
+    coverTexHash: storeText(src.coverTexHash),
     chat: normalizeChat(src.chat),
     updatedAt: storeTime(src.updatedAt),
   };

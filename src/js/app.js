@@ -61,6 +61,12 @@
   // Transient diagnostic state for the fix button. Never persisted:
   // the last compiler error (or pre-validation refuse reason).
   let lastCompileError = '';
+  // Step 3 shows CV.tex or cover.tex. The tab is session-only: a display
+  // choice must not become a stored field. texShown is the file in the
+  // editor now (the tab falls back when its file is empty).
+  let texTab = 'tex';
+  let texShown = 'tex';
+  let pdfTexKey = null;
 
   const $ = (id) => document.getElementById(id);
   const step = (n) => document.querySelectorAll('.panel')[n - 1];
@@ -80,6 +86,8 @@
       cover: '',
       tex: '',
       texHash: '',
+      coverTex: '',
+      coverTexHash: '',
       chat: [],
       updatedAt: Date.now(),
     };
@@ -956,6 +964,8 @@
     copy.cover = '';
     copy.tex = '';
     copy.texHash = '';
+    copy.coverTex = '';
+    copy.coverTexHash = '';
     copy.chat = [];
     const id = 's' + Date.now().toString(36);
     sections[id] = copy;
@@ -1085,16 +1095,21 @@
         if (!s) return;
         const txt = await readFile(f);
         const key = btn.dataset.upload;
-        s[key] = txt;
+        // The .tex upload goes into the file the editor shows (CV or cover).
+        const target = key === 'tex' ? texShown : key;
+        s[target] = txt;
         touch(s);
         saveAll();
         if (key === 'master') {
           s.lang = f.name.includes('PT') ? 'pt' : 'en';
           $('lang').value = s.lang;
         }
-        if (['cvOut', 'cover', 'tex'].includes(key)) {
-          $(key).value = txt;
-          updateCounter(key);
+        if (target === 'tex' || target === 'coverTex') {
+          renderTexCard();
+          updateCounter('tex');
+        } else if (target === 'cvOut' || target === 'cover') {
+          $(target).value = txt;
+          updateCounter(target);
         }
         fillStep1();
         toast('File "' + f.name + '" loaded', 'ok');
@@ -1165,6 +1180,7 @@
   function hidePdf() {
     if (pdfUrl) { URL.revokeObjectURL(pdfUrl); pdfUrl = null; }
     pdfSectionId = null;
+    pdfTexKey = null;
     const viewer = $('viewer');
     if (viewer) {
       viewer.removeAttribute('src');
@@ -1257,6 +1273,7 @@
       $('step1-empty').style.display = 'block';
       clearStep1Fields();
       hidePdf();
+      renderTexCard();
       updateAllCounters();
       renderLibSelects();
       renderLibChips('user-models', 'template');
@@ -1268,6 +1285,7 @@
     $('step1-empty').style.display = 'none';
     STEP1_FIELDS.forEach((k) => { $(k).value = s[k]; });
     STEP2_FIELDS.forEach((k) => { $(k).value = s[k] || ''; });
+    renderTexCard();
     $('lang').value = s.lang;
     if (pdfSectionId !== activeId) hidePdf();
     renderLibSelects();
@@ -1342,45 +1360,131 @@
     goTo(2);
   }
 
-  async function toTex(s) {
-    if (!(s.cvOut.trim() || s.master.trim())) { toast('No markdown content to convert.', 'warn'); return; }
+  // ---------- Step 3: CV.tex / cover.tex ----------
+  // The editor shows one of the two .tex files. The tabs appear only when
+  // both files have text; one file (or none) keeps the plain card.
+  function texLabel(key) {
+    if (key === 'coverTex') {
+      return 'cover.tex';
+    } else {
+      return 'CV.tex';
+    }
+  }
+
+  /* The key the editor shows. A tab with no text falls back to the other
+   * file, so the editor never hides the only document. */
+  function texKey(s) {
+    if (!s) return 'tex';
+    if (String(s[texTab] || '').trim()) return texTab;
+    const other = texTab === 'tex' ? 'coverTex' : 'tex';
+    if (String(s[other] || '').trim()) return other;
+    return texTab;
+  }
+
+  function texValue(s) {
+    if (!s) return '';
+    return String(s[texKey(s)] || '');
+  }
+
+  function renderTexCard() {
+    const s = active();
+    const hasCv = Boolean(s && String(s.tex || '').trim());
+    const hasCover = Boolean(s && String(s.coverTex || '').trim());
+    const both = hasCv && hasCover;
+    const key = texKey(s);
+    texShown = key;
+    const tabs = $('tex-tabs');
+    const title = $('tex-title');
+    const ta = $('tex');
+    if (tabs) {
+      tabs.hidden = !both;
+      tabs.querySelectorAll('[data-tex-tab]').forEach((b) => {
+        const on = both && b.dataset.texTab === key;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', String(on));
+      });
+    }
+    if (title) {
+      title.hidden = both;
+      title.textContent = texLabel(key);
+    }
+    if (ta) {
+      const value = texValue(s);
+      if (ta.value !== value) ta.value = value;
+    }
+  }
+
+  /* A tab click. The error log and the PDF belong to the shown file: they
+   * drop when another file comes into view. */
+  function selectTexTab(key) {
+    if (key !== 'tex' && key !== 'coverTex') {
+      return;
+    } else if (key === texTab && key === texShown) {
+      return;
+    }
+    texTab = key;
+    texShown = key;
+    lastCompileError = '';
+    if (pdfTexKey && pdfTexKey !== key) hidePdf();
+    renderTexCard();
+  }
+
+  /* Shows a file after its generation or upload. */
+  function showTexDoc(key) {
+    texTab = key;
+    texShown = key;
+    if (pdfTexKey && pdfTexKey !== key) hidePdf();
+    renderTexCard();
+    updateCounter('tex');
+  }
+
+  async function toTex(s, kind) {
+    const isCover = kind === 'cover';
+    const key = isCover ? 'coverTex' : 'tex';
+    const hashKey = isCover ? 'coverTexHash' : 'texHash';
+    const source = isCover ? s.cover : (s.cvOut || s.master);
+    if (!String(source || '').trim()) {
+      toast(isCover
+        ? 'cover.md is empty — generate it in Step 1 or paste it in Step 2.'
+        : 'No markdown content to convert.', 'warn');
+      return;
+    }
     if (!s.template.trim()) { toast('The LaTeX template is empty — load one from the library.', 'warn'); return; }
     // The tex is derived from these inputs: regenerating after a template
     // swap, an upload, or a hand edit would silently discard the current
     // tex, so ask first. First-time and same-inputs converts never nag.
-    const curHash = texHashOf(s);
-    if (s.tex.trim() && s.texHash !== curHash) {
+    const curHash = texHashOf(s, key);
+    if (String(s[key] || '').trim() && s[hashKey] !== curHash) {
       const ok = await modal.confirm({
-        title: 'Overwrite CV.tex?',
-        message: 'The current CV.tex does not match the current template/content — it may be hand-edited, uploaded, or generated from an older template. Regenerate it from scratch?',
+        title: 'Overwrite ' + texLabel(key) + '?',
+        message: 'The current ' + texLabel(key) + ' does not match the current template/content — it may be hand-edited, uploaded, or generated from an older template. Regenerate it from scratch?',
         confirmText: 'Regenerate',
       });
       if (!ok) return;
     }
-    setStatus('Converting markdown → LaTeX (' + config.model + ')…', 'busy');
+    setStatus('Converting ' + (isCover ? 'cover.md' : 'markdown') + ' → LaTeX (' + config.model + ')…', 'busy');
     // Validate before assigning: a truncated/markdown reply must not
     // clobber a previous working tex (same rule fixTex follows).
-    const fresh = sanitizeTex(await tellChat(buildTexPrompt(s.cvOut || s.master, s.template), config));
+    const fresh = sanitizeTex(await tellChat(buildTexPrompt(source, s.template, isCover ? 'cover' : 'cv'), config));
     const texProblem = getTexProblem(fresh);
     if (texProblem) {
-      setStatus('LLM returned markdown, not LaTeX (' + texProblem + ') — previous .tex kept. Regenerate or paste a .tex starting with \\documentclass.', 'err');
+      setStatus('LLM returned markdown, not LaTeX (' + texProblem + ') — previous ' + texLabel(key) + ' kept. Regenerate or paste a .tex starting with \\documentclass.', 'err');
       log('toTex warning: output looks like ' + texProblem + ', not LaTeX. Head: ' + fresh.trim().slice(0, 200));
       toast('The model returned markdown instead of LaTeX — previous .tex kept.', 'err', 6000);
       goTo(3);
       return;
     } else {
-      s.tex = fresh;
-      s.texHash = curHash;
+      s[key] = fresh;
+      s[hashKey] = curHash;
       touch(s); saveAll();
       /* The user can change the section while the model works. */
       if (active() !== s) {
         toast('.tex generated for "' + s.name + '" — switch to that section.', 'ok');
         return;
       }
-      $('tex').value = s.tex;
-      updateCounter('tex');
-      setStatus('.tex generated — compiling the PDF…', 'ok');
-      toast('.tex generated in Step 3 — compiling the PDF', 'ok');
+      showTexDoc(key);
+      setStatus(texLabel(key) + ' generated — compiling the PDF…', 'ok');
+      toast(texLabel(key) + ' generated in Step 3 — compiling the PDF', 'ok');
     }
     goTo(3);
     await compilePdf();
@@ -1389,8 +1493,11 @@
   // Fingerprint of the inputs a .tex was generated from. toTex stamps
   // it on success and asks before overwriting a tex that no longer
   // matches — hand edits, uploads, or template swaps included. Pure.
-  function texHashOf(s) {
-    const src = String((s && (s.cvOut || s.master)) || '') + '\n%%template%%\n' + String((s && s.template) || '');
+  function texHashOf(s, key) {
+    const content = key === 'coverTex'
+      ? String((s && s.cover) || '')
+      : String((s && (s.cvOut || s.master)) || '');
+    const src = content + '\n%%template%%\n' + String((s && s.template) || '');
     let hash = 5381;
     for (let i = 0; i < src.length; i++) {
       hash = (((hash << 5) + hash) + src.charCodeAt(i)) | 0;
@@ -1408,7 +1515,7 @@
       };
     } else if (texProblem === 'markdown' || texProblem === 'no-documentclass') {
       return {
-        status: 'The model returned markdown, not LaTeX (' + texProblem + ') — previous .tex kept. Use "Convert to LaTeX" instead.',
+        status: 'The model returned markdown, not LaTeX (' + texProblem + ') — previous .tex kept. Use "CV to LaTeX" or "Cover to LaTeX" instead.',
         toast: 'Model returned markdown, not LaTeX — previous .tex kept.',
       };
     } else {
@@ -1432,15 +1539,17 @@
   // the answer, and repeats until the document compiles. Never clears tex on
   // failure.
   async function fixTex(s) {
-    if (!s.tex.trim()) { toast('Nothing to fix — CV.tex is empty.', 'warn'); return; }
+    const key = texShown;
+    const source = String(s[key] || '');
+    if (!source.trim()) { toast('Nothing to fix — ' + texLabel(key) + ' is empty.', 'warn'); return; }
     // No log yet (fresh section or post-success): fall back to the local
-    // diagnosis so Fix stays useful right after a bad Convert to LaTeX.
+    // diagnosis so Fix stays useful right after a bad conversion.
     if (!lastCompileError.trim()) {
-      const cur = getTexProblem(s.tex);
+      const cur = getTexProblem(source);
       if (cur) {
         lastCompileError = 'Pre-validation (' + cur + '). No compile attempted yet.';
       } else {
-        toast('Nothing to fix — CV.tex looks valid. Compile to get an error log.', 'ok');
+        toast('Nothing to fix — ' + texLabel(key) + ' looks valid. Compile to get an error log.', 'ok');
         return;
       }
     }
@@ -1458,9 +1567,9 @@
     // pushes small models into truncated replies. Send the template
     // only when the broken tex has no preamble to work from.
     const state = {
-      tex: s.tex,
+      tex: source,
       error: lastCompileError.slice(-FIX_LOG_TAIL),
-      template: s.tex.indexOf('\\documentclass') === -1 ? s.template : '',
+      template: source.indexOf('\\documentclass') === -1 ? s.template : '',
       attempt: 0,
       ok: false,
       pdf: null,
@@ -1536,29 +1645,31 @@
       compileBusy = false;
     }
     if (!state.ok) {
-      const msg = 'Could not fix the LaTeX in ' + state.attempt + ' attempt(s) — rewrite CV.tex by hand or regenerate it with "Convert to LaTeX".';
+      const msg = 'Could not fix the LaTeX in ' + state.attempt + ' attempt(s) — rewrite ' + texLabel(key) + ' by hand or regenerate it with "CV to LaTeX" or "Cover to LaTeX".';
       setStatus(msg, 'err');
       log('fixTex: the chain ended without a compiling document after ' + state.attempt + ' attempt(s).'
         + (state.failure ? ' Last answer: ' + state.failure.status : ''));
       toast(msg, 'err', 9000);
       return;
     }
-    s.tex = state.tex;
-    s.texHash = texHashOf(s);
+    const hashKey = key === 'tex' ? 'texHash' : 'coverTexHash';
+    s[key] = state.tex;
+    s[hashKey] = texHashOf(s, key);
     touch(s); saveAll();
     /* The user can change the section while the model works. */
     if (active() !== s) {
       toast('Fixed .tex saved in "' + s.name + '" — switch to that section.', 'ok');
       return;
     }
-    $('tex').value = s.tex;
-    updateCounter('tex');
+    renderTexCard();
     // Consumed: reusing the pre-fix log against the new tex would
     // send the model fixing an already-fixed file in circles.
     lastCompileError = '';
     setStatus('LaTeX fixed on attempt ' + state.attempt + ' — PDF generated', 'ok');
     toast('Fixed .tex applied (attempt ' + state.attempt + ')', 'ok');
-    if (state.pdf) showPdf(state.pdf, sectionId);
+    /* The PDF belongs to the fixed file: show it only while that file is
+     * the one in the editor. */
+    if (state.pdf && texShown === key) showPdf(state.pdf, sectionId, key);
   }
 
   // ---------- Step 5 / Engine ----------
@@ -1605,22 +1716,24 @@
       toast('A compile is still running — wait for it to finish.', 'warn');
       return;
     }
-    if (!s.tex.trim()) {
-      setStatus('Step 5: the .tex is empty — generate or paste a .tex.', 'warn');
-      toast('Compile what? CV.tex is empty.', 'warn');
+    const shownKey = texShown;
+    const source = String(s[shownKey] || '');
+    if (!source.trim()) {
+      setStatus('Step 5: ' + texLabel(shownKey) + ' is empty — generate or paste a .tex.', 'warn');
+      toast('Compile what? ' + texLabel(shownKey) + ' is empty.', 'warn');
       return;
     }
     // Block markdown before it reaches PdfTeX, where it fails with the
     // cryptic "macro parameter character #" error on lines like "# ...".
-    const texProblem = getTexProblem(s.tex);
+    const texProblem = getTexProblem(source);
     if (texProblem) {
-      const firstLine = s.tex.trim().split('\n')[0].slice(0, 120);
+      const firstLine = source.trim().split('\n')[0].slice(0, 120);
       // The fix prompt already receives the tex as BROKEN .TEX — storing
       // another copy here only bloats it toward truncation.
       lastCompileError = 'Pre-validation refuse (' + texProblem + '). First line: ' + firstLine;
-      setStatus('Step 5: CV.tex looks like ' + texProblem + ' — it must start with \\documentclass. Regenerate via "Convert to LaTeX" or use Fix with LLM.', 'err');
-      log('Refusing to compile: CV.tex problem = ' + texProblem + '. First line: ' + firstLine);
-      toast('CV.tex is not LaTeX (' + texProblem + ') — use Fix with LLM or regenerate.', 'err', 6000);
+      setStatus('Step 5: ' + texLabel(shownKey) + ' looks like ' + texProblem + ' — it must start with \\documentclass. Regenerate via "CV to LaTeX" or "Cover to LaTeX", or use Fix with LLM.', 'err');
+      log('Refusing to compile: ' + texLabel(shownKey) + ' problem = ' + texProblem + '. First line: ' + firstLine);
+      toast(texLabel(shownKey) + ' is not LaTeX (' + texProblem + ') — use Fix with LLM or regenerate.', 'err', 6000);
       return;
     } else {
       // Valid-looking LaTeX below — proceed to the engine.
@@ -1640,19 +1753,21 @@
     try {
       const eng = await getEngine();
       clearInterval(timer);
-      const res = await compileWith(eng, s.tex);
+      const res = await compileWith(eng, source);
       log('status:', res.status, '(' + ((performance.now() - t0) / 1000).toFixed(0) + 's)');
       if (res.status === 0) {
         lastCompileError = '';
-        /* The PDF belongs to the section of the compile. Another section is
-         * active now: the PDF of the other section must not stay on the
-         * screen. */
-        if (activeId !== sectionId) {
+        /* The PDF belongs to the section and the .tex of the compile.
+         * Another section or tab is active now: the PDF of the other
+         * document must not stay on the screen. */
+        if (activeId !== sectionId || texShown !== shownKey) {
           hidePdf();
-          toast('PDF compiled for another section — switch to it to see the PDF.', 'ok');
+          toast(activeId !== sectionId
+            ? 'PDF compiled for another section — switch to it to see the PDF.'
+            : 'PDF compiled for ' + texLabel(shownKey) + ' — switch back to it to see the PDF.', 'ok');
           return;
         }
-        showPdf(res.pdf, sectionId);
+        showPdf(res.pdf, sectionId, shownKey);
         setStatus('PDF generated (' + res.pdf.length + ' bytes)', 'ok');
         toast('PDF compiled successfully', 'ok');
       } else {
@@ -1683,13 +1798,14 @@
     }
   }
 
-  function showPdf(uint8, sectionId) {
+  function showPdf(uint8, sectionId, texKeyName) {
     const viewer = $('viewer');
     if (pdfUrl) URL.revokeObjectURL(pdfUrl);
     pdfUrl = URL.createObjectURL(new Blob([uint8], { type: 'application/pdf' }));
-    /* The PDF belongs to the section of the compile, not to the section
-     * that happens to be active now. */
+    /* The PDF belongs to the section and the .tex of the compile, not to
+     * the section or the tab that happens to be active now. */
     pdfSectionId = sectionId === undefined ? activeId : sectionId;
+    pdfTexKey = texKeyName === undefined ? texShown : texKeyName;
     viewer.src = pdfUrl;
     viewer.style.display = 'block';
   }
@@ -2108,7 +2224,7 @@
     bindModelCards();
     bindConfig();
 
-    ['cvOut', 'cover', 'tex'].forEach((k) => {
+    ['cvOut', 'cover'].forEach((k) => {
       const el = $(k);
       const s = active();
       if (s) el.value = s[k];
@@ -2120,6 +2236,19 @@
         saveAllDebounced();
         updateCounter(k);
       });
+    });
+    // The .tex editor writes into the file it shows. texShown keeps the
+    // edit in that file even after the user clears all of its text.
+    $('tex').addEventListener('input', (e) => {
+      const ss = active();
+      if (!ss) return;
+      ss[texShown] = e.target.value;
+      touch(ss);
+      saveAllDebounced();
+      updateCounter('tex');
+    });
+    document.querySelectorAll('[data-tex-tab]').forEach((b) => {
+      b.addEventListener('click', () => selectTexTab(b.dataset.texTab));
     });
     updateAllCounters();
 
@@ -2134,7 +2263,8 @@
 
     $('btn-gen-cv').addEventListener('click', () => generate(genCvOut, 'btn-gen-cv', 'Generating CV_OUT.md'));
     $('btn-gen-cover').addEventListener('click', () => generate(genCover, 'btn-gen-cover', 'Generating cover.md'));
-    $('btn-to-tex').addEventListener('click', () => generate(toTex, 'btn-to-tex', 'Converting to LaTeX'));
+    $('btn-cv-to-tex').addEventListener('click', () => generate((s) => toTex(s, 'cv'), 'btn-cv-to-tex', 'Converting CV to LaTeX'));
+    $('btn-cover-to-tex').addEventListener('click', () => generate((s) => toTex(s, 'cover'), 'btn-cover-to-tex', 'Converting cover to LaTeX'));
     $('btn-fix-tex').addEventListener('click', () => generate(fixTex, 'btn-fix-tex', 'Fixing LaTeX'));
     $('btn-compile').addEventListener('click', compilePdf);
     $('btn-tex-toggle').addEventListener('click', () => setTexCollapsed(!isTexCollapsed()));
@@ -2143,12 +2273,15 @@
 
     $('dl-cvout').addEventListener('click', () => { const s = active(); if (s) download('CV_OUT.md', s.cvOut); });
     $('dl-cover').addEventListener('click', () => { const s = active(); if (s) download('cover.md', s.cover); });
-    $('dl-tex').addEventListener('click', () => { const s = active(); if (s) download('CV.tex', s.tex); });
+    $('dl-tex').addEventListener('click', () => {
+      const s = active();
+      if (s) download(texLabel(texShown), String(s[texShown] || ''));
+    });
     $('dl-pdf').addEventListener('click', () => {
       if (pdfUrl) {
         const a = document.createElement('a');
         a.href = pdfUrl;
-        a.download = 'CV.pdf';
+        a.download = pdfTexKey === 'coverTex' ? 'Cover.pdf' : 'CV.pdf';
         a.click();
       } else {
         toast('Compile the PDF first.', 'warn');

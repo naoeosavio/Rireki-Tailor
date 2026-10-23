@@ -121,10 +121,15 @@ ${pitch}`;
   return p;
 }
 
-function buildTexPrompt(cvOut, templateTex) {
-  return `You are a LaTeX CV formatter. Fill a markdown CV into a LaTeX template.
+function buildTexPrompt(sourceMd, templateTex, kind) {
+  const isCover = kind === 'cover';
+  const subject = isCover ? 'cover letter' : 'CV';
+  const sourceNote = isCover
+    ? 'The markdown below is a cover letter, not a CV. Keep the letter text as paragraphs and omit CV-only sections that the letter does not use.\n\n'
+    : '';
+  return `You are a LaTeX ${subject} formatter. Fill a markdown ${subject} into a LaTeX template.
 
-## Step 1: Reverse-Engineer the Template
+${sourceNote}## Step 1: Reverse-Engineer the Template
 
 Study the LaTeX template below. **IGNORE all sample/placeholder content** — names, emails, skills, job titles, universities, dates, taglines, bios, all of it is fake and irrelevant. Focus ONLY on extracting the **structural skeleton**, using whatever commands and section names THIS template actually defines (do not assume any particular naming convention):
 
@@ -134,15 +139,15 @@ Study the LaTeX template below. **IGNORE all sample/placeholder content** — na
 - **Header structure:** How is the person's name, tagline/title, and contact info (email, phone, links, location) declared and rendered?
 - **Overall structure:** preamble -> \\begin{document} -> header setup -> sections -> \\end{document}
 
-## Step 2: Fill the Skeleton with CV Content
+## Step 2: Fill the Skeleton with ${isCover ? 'Cover Letter' : 'CV'} Content
 
-Now take the CV content (markdown below) and adapt it to the skeleton you just extracted:
+Now take the ${subject} content (markdown below) and adapt it to the skeleton you just extracted:
 
-- Map each CV section to the closest matching section pattern found in the template. Use the **exact same commands and layout patterns** you identified in Step 1 — do not substitute commands from a different template style.
-- Replace all sample data with the actual CV data (name, tagline, contact info, bio/summary, skills, experience entries, education, languages, etc.).
-- If the CV has a section with no equivalent in the template (e.g. Projects), reuse the closest existing entry-list pattern from the template (e.g. whatever pattern is used for a similar list-of-entries section) rather than inventing new formatting.
-- If the template skeleton has a section not present in the CV content, **omit it entirely**.
-- If the CV has more entries in a section than the template's sample showed, repeat the same per-entry pattern for each additional entry (and its divider/separator, if the template uses one).
+- Map each ${subject} section to the closest matching section pattern found in the template. Use the **exact same commands and layout patterns** you identified in Step 1 — do not substitute commands from a different template style.
+- Replace all sample data with the actual ${subject} data (name, tagline, contact info, bio/summary, skills, experience entries, education, languages, etc.).
+- If the ${subject} has a section with no equivalent in the template (e.g. Projects), reuse the closest existing entry-list pattern from the template (e.g. whatever pattern is used for a similar list-of-entries section) rather than inventing new formatting.
+- If the template skeleton has a section not present in the ${subject} content, **omit it entirely**.
+- If the ${subject} has more entries in a section than the template's sample showed, repeat the same per-entry pattern for each additional entry (and its divider/separator, if the template uses one).
 
 ## Rules
 
@@ -160,9 +165,9 @@ ${templateTex}
 
 ---
 
-## CV CONTENT (Markdown)
+## ${isCover ? 'COVER LETTER' : 'CV'} CONTENT (Markdown)
 
-${cvOut}
+${sourceMd}
 
 ---
 
