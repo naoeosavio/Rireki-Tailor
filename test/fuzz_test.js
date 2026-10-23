@@ -50,10 +50,12 @@ function test(name, fn) {
 
 const SECTION_KEYS = [
   'name', 'role', 'master', 'lang', 'masterId', 'template', 'templateId',
-  'pitch', 'genCover', 'cvOut', 'cover', 'tex', 'texHash', 'chat', 'updatedAt',
+  'pitch', 'genCover', 'cvOut', 'cover', 'tex', 'texHash', 'coverTex',
+  'coverTexHash', 'chat', 'updatedAt',
 ];
 
-const TEXT_FIELDS = ['role', 'master', 'template', 'pitch', 'cvOut', 'cover', 'tex', 'texHash'];
+const TEXT_FIELDS = ['role', 'master', 'template', 'pitch', 'cvOut', 'cover', 'tex', 'texHash',
+  'coverTex', 'coverTexHash'];
 
 function checkSection(s, label) {
   assert.ok(s && typeof s === 'object' && !Array.isArray(s), label + ': not an object');

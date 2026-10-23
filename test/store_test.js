@@ -119,6 +119,15 @@ test('normalizeSection: texHash survives as a string, hostile becomes empty', ()
   assert.strictEqual(store.normalizeSection({}).texHash, '');
 });
 
+test('normalizeSection: coverTex and coverTexHash survive as strings', () => {
+  const s = store.normalizeSection({ coverTex: 'DOC', coverTexHash: 'cd34' });
+  assert.strictEqual(s.coverTex, 'DOC');
+  assert.strictEqual(s.coverTexHash, 'cd34');
+  assert.strictEqual(store.normalizeSection({ coverTex: 42 }).coverTex, '');
+  assert.strictEqual(store.normalizeSection({}).coverTex, '');
+  assert.strictEqual(store.normalizeSection({}).coverTexHash, '');
+});
+
 test('normalizeSection: genCover only stays true for a real boolean', () => {
   assert.strictEqual(store.normalizeSection({ genCover: 'yes' }).genCover, false);
   assert.strictEqual(store.normalizeSection({ genCover: true }).genCover, true);

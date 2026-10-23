@@ -237,10 +237,11 @@ test('describeFixFailure: empty raw reply names the empty reply', () => {
   }
 });
 
-test('describeFixFailure: markdown output points at Convert', () => {
+test('describeFixFailure: markdown output points at the converters', () => {
   for (const p of ['markdown', 'no-documentclass']) {
     const msg = tex.describeFixFailure('# Title', p);
-    assert.ok(msg.status.includes('Convert to LaTeX'), 'wrong status: ' + msg.status);
+    assert.ok(msg.status.includes('CV to LaTeX'), 'wrong status: ' + msg.status);
+    assert.ok(msg.status.includes('Cover to LaTeX'), 'cover converter missing: ' + msg.status);
   }
 });
 
@@ -269,11 +270,22 @@ test('texHashOf: falls back to master and tolerates hostile input', () => {
   assert.strictEqual(typeof tex.texHashOf({}), 'string');
 });
 
+test('texHashOf: the cover hash follows cover.md, not the CV', () => {
+  const a = { cvOut: 'CV', cover: 'COVER', master: 'M', template: 'T' };
+  assert.notStrictEqual(tex.texHashOf(a, 'coverTex'), tex.texHashOf(a));
+  assert.strictEqual(tex.texHashOf(a, 'coverTex'), tex.texHashOf(Object.assign({}, a, { cvOut: 'OTHER' }), 'coverTex'));
+  assert.notStrictEqual(tex.texHashOf(a, 'coverTex'), tex.texHashOf(Object.assign({}, a, { cover: 'COVER2' }), 'coverTex'));
+  assert.notStrictEqual(tex.texHashOf(a, 'coverTex'), tex.texHashOf(Object.assign({}, a, { template: 'T2' }), 'coverTex'));
+});
+
 test('store: texHash survives normalization, hostile becomes empty', () => {
   const store = require('../src/js/store.js');
   assert.strictEqual(store.normalizeSection({ texHash: 'ab12' }).texHash, 'ab12');
   assert.strictEqual(store.normalizeSection({ texHash: 42 }).texHash, '');
   assert.strictEqual(store.normalizeSection({}).texHash, '');
+  assert.strictEqual(store.normalizeSection({ coverTex: 'T' }).coverTex, 'T');
+  assert.strictEqual(store.normalizeSection({ coverTexHash: 'cd34' }).coverTexHash, 'cd34');
+  assert.strictEqual(store.normalizeSection({ coverTexHash: 42 }).coverTexHash, '');
 });
 
 /* ================================================================== *
@@ -342,14 +354,15 @@ test('lifecycle: serve.js leaves extensionless cmaps alone', () => {
   assert.ok(src.includes("45: ''"), 'cmap ext fix missing');
 });
 
-test('lifecycle: Convert confirms before overwriting a mismatched tex', () => {
+test('lifecycle: Convert confirms before overwriting a mismatched document', () => {
   const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
-  assert.ok(src.includes('const curHash = texHashOf(s)'), 'hash snapshot missing');
-  assert.ok(src.includes("if (s.tex.trim() && s.texHash !== curHash)"), 'mismatch guard missing');
-  assert.ok(src.includes("title: 'Overwrite CV.tex?'"), 'confirm copy missing');
-  assert.ok(src.includes('s.texHash = curHash;'), 'convert stamp missing');
-  assert.ok(src.includes('s.texHash = texHashOf(s);'), 'fix stamp missing');
+  assert.ok(src.includes('const curHash = texHashOf(s, key)'), 'hash snapshot missing');
+  assert.ok(src.includes("if (String(s[key] || '').trim() && s[hashKey] !== curHash)"), 'mismatch guard missing');
+  assert.ok(src.includes("title: 'Overwrite ' + texLabel(key) + '?'"), 'confirm copy missing');
+  assert.ok(src.includes('s[hashKey] = curHash;'), 'convert stamp missing');
+  assert.ok(src.includes('s[hashKey] = texHashOf(s, key);'), 'fix stamp missing');
   assert.ok(src.includes("copy.texHash = '';"), 'duplicate reset missing');
+  assert.ok(src.includes("copy.coverTexHash = '';"), 'cover duplicate reset missing');
 });
 
 /* ================================================================== */

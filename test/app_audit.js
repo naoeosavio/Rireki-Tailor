@@ -183,6 +183,136 @@ test('load: a library entry with a non-string lang and a hostile id keeps the ap
 });
 
 /* ================================================================== *
+ * Step 3: CV.tex / cover.tex tabs
+ * ================================================================== */
+
+test('step 3: both .tex files show tabs and the editor follows the tab', async (page) => {
+  await seed(page, {
+    'riki.sections': { s1: section({ tex: 'CV-TEX', coverTex: 'COVER-TEX' }) },
+    'riki.active': 's1',
+  });
+  await page.click('[data-nav="3"]');
+  await page.waitForTimeout(400);
+
+  assert.strictEqual(await page.$$eval('.tex-tab', (b) => b.length), 2, 'expected two tabs');
+  assert.strictEqual(await page.$eval('#tex-tabs', (e) => e.hidden), false, 'tabs are hidden');
+  assert.strictEqual(await page.$eval('#tex-title', (e) => e.hidden), true, 'title still shown with tabs');
+  assert.strictEqual(await page.inputValue('#tex'), 'CV-TEX', 'CV.tex is not shown first');
+  assert.deepStrictEqual(
+    await page.$$eval('.tex-tab', (b) => b.map((x) => x.dataset.texTab + ':' + x.classList.contains('active'))),
+    ['tex:true', 'coverTex:false'],
+    'the CV tab is not the only active tab'
+  );
+
+  await page.click('[data-tex-tab="coverTex"]');
+  await page.waitForTimeout(200);
+  assert.strictEqual(await page.inputValue('#tex'), 'COVER-TEX', 'cover.tex is not shown');
+  assert.deepStrictEqual(
+    await page.$$eval('.tex-tab', (b) => b.map((x) => x.classList.contains('active'))),
+    [false, true],
+    'only one tab must be active'
+  );
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+test('step 3: an edit goes to the shown file', async (page) => {
+  await seed(page, {
+    'riki.sections': { s1: section({ tex: 'CV-TEX', coverTex: 'COVER-TEX' }) },
+    'riki.active': 's1',
+  });
+  await page.click('[data-nav="3"]');
+  await page.click('[data-tex-tab="coverTex"]');
+  await page.fill('#tex', 'COVER-EDIT');
+  await page.waitForTimeout(600);
+
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('riki.sections')).s1);
+  assert.strictEqual(saved.coverTex, 'COVER-EDIT', 'the cover edit did not reach coverTex');
+  assert.strictEqual(saved.tex, 'CV-TEX', 'the cover edit overwrote CV.tex');
+
+  /* Clearing the visible file must not move the next keystroke into the
+   * other file (the fallback would pick CV because cover is empty). */
+  await page.fill('#tex', '');
+  await page.type('#tex', 'X');
+  await page.waitForTimeout(600);
+  const afterClear = await page.evaluate(() => JSON.parse(localStorage.getItem('riki.sections')).s1);
+  assert.strictEqual(afterClear.coverTex, 'X', 'a keystroke after clearing went to the wrong file');
+  assert.strictEqual(afterClear.tex, 'CV-TEX', 'CV.tex was overwritten after the cover was cleared');
+});
+
+test('step 3: one .tex file keeps the plain card', async (page) => {
+  await seed(page, {
+    'riki.sections': { s1: section({ coverTex: 'COVER-TEX' }) },
+    'riki.active': 's1',
+  });
+  await page.click('[data-nav="3"]');
+  await page.waitForTimeout(400);
+
+  assert.strictEqual(await page.$eval('#tex-tabs', (e) => e.hidden), true, 'tabs are shown for one file');
+  assert.strictEqual(await page.$eval('#tex-title', (e) => e.hidden), false, 'title is hidden without tabs');
+  assert.strictEqual((await page.textContent('#tex-title')).trim(), 'cover.tex', 'wrong title');
+  assert.strictEqual(await page.inputValue('#tex'), 'COVER-TEX', 'cover.tex is not in the editor');
+});
+
+test('step 2: two convert buttons replace the single one', async (page) => {
+  await seed(page, { 'riki.sections': { s1: section() }, 'riki.active': 's1' });
+  await page.click('[data-nav="2"]');
+  await page.waitForTimeout(200);
+
+  assert.ok(await page.$('#btn-cv-to-tex'), 'the CV to LaTeX button is missing');
+  assert.ok(await page.$('#btn-cover-to-tex'), 'the Cover to LaTeX button is missing');
+  assert.strictEqual(await page.$('#btn-to-tex'), null, 'the old convert button is still there');
+});
+
+test('step 2: Cover to LaTeX writes cover.tex and keeps CV.tex', async (page) => {
+  await seed(page, {
+    'riki.config': { model: 'g', keys: { openai: 'sk-test' }, urls: {} },
+    'riki.sections': { s1: section({ cover: '# Cover letter\n\nHello.', tex: 'CV-OLD' }) },
+    'riki.active': 's1',
+  });
+  /* The model answers with a document and the engine accepts it. This is
+   * the whole button path: markdown → LLM → cover.tex → compile. */
+  await page.evaluate(() => {
+    window.PdfTeXEngine = function () {
+      return {
+        loadEngine: () => Promise.resolve(),
+        writeMemFSFile: () => {},
+        setEngineMainFile: () => {},
+        flushCache: () => {},
+        compileLaTeX: () => Promise.resolve({ status: 0, log: '', pdf: new Uint8Array([37, 80, 68, 70]) }),
+      };
+    };
+    window.TellSDK = {
+      create_ask_ai: async () => ({
+        ask: async () => '\\documentclass{article}\n\\begin{document}\nCOVER TEX\n\\end{document}',
+      }),
+    };
+  });
+  await page.click('[data-nav="2"]');
+  await page.waitForTimeout(200);
+  await page.click('#btn-cover-to-tex');
+  await page.waitForFunction(
+    () => document.getElementById('status').textContent.indexOf('PDF generated') !== -1,
+    null,
+    { timeout: 30000 }
+  );
+
+  const out = await page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('riki.sections')).s1;
+    return {
+      tex: saved.tex,
+      coverTex: saved.coverTex,
+      value: document.getElementById('tex').value,
+      tab: document.querySelector('.tex-tab.active') ? document.querySelector('.tex-tab.active').dataset.texTab : '',
+    };
+  });
+  assert.ok(out.coverTex.indexOf('COVER TEX') !== -1, 'cover.tex was not written: ' + out.coverTex);
+  assert.strictEqual(out.tex, 'CV-OLD', 'the cover conversion overwrote CV.tex');
+  assert.ok(out.value.indexOf('COVER TEX') !== -1, 'the editor does not show cover.tex');
+  assert.strictEqual(out.tab, 'coverTex', 'the cover tab is not active');
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
+/* ================================================================== *
  * getEngine(): a rejected load must not poison every later compile
  * ================================================================== */
 
@@ -1025,7 +1155,7 @@ test('source: the app keeps the guards of the fixes', () => {
   assert.ok(src.includes('if (active() !== s)'), 'the late answer guard is gone');
   assert.ok(src.includes('let compileBusy = false'), 'the compile guard is gone');
   assert.ok(src.includes('if (compileBusy)'), 'the compile guard is not used');
-  assert.ok(src.includes('showPdf(res.pdf, sectionId)'), 'the PDF does not carry its section');
+  assert.ok(src.includes('showPdf(res.pdf, sectionId, shownKey)'), 'the PDF does not carry its section and file');
   assert.ok(src.includes('STORE_MAX_SECTIONS_LOAD'), 'the load ceiling is gone');
   assert.ok(src.includes('FETCH_TIMEOUT_MS'), 'the fetch timeout is gone');
   assert.ok(src.includes('await seedDefaults()'), 'the seed still blocks the start');

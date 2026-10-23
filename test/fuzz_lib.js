@@ -58,7 +58,8 @@ const SCALAR_POOL = [
 
 const KEY_POOL = [
   'name', 'role', 'master', 'lang', 'masterId', 'template', 'templateId',
-  'pitch', 'genCover', 'cvOut', 'cover', 'tex', 'texHash', 'chat', 'updatedAt',
+  'pitch', 'genCover', 'cvOut', 'cover', 'tex', 'texHash', 'coverTex',
+  'coverTexHash', 'chat', 'updatedAt',
   'id', 'content', 'keys', 'urls', 'model', 'customApi', 'customHeaders',
   'setupDone', 'masters', 'templates', '__proto__', 'constructor', 'toString',
   'valueOf', '0', '1', '', ' ', 'a b', 'a"b',
