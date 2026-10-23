@@ -58,12 +58,13 @@ bar, so the work area keeps the space.
 
 1. **Vaga** — job description and optional pitch.
    **Generate CV_OUT.md** and **cover.md** via the LLM (one-shot, with spinner + progress bar).
-2. **Markdown** — edit/copy/download CV_OUT.md and cover.md. **Convert to LaTeX** → CV.tex
-   (same prompt as `gen-pdf`: extracts the template's skeleton and fills it with the CV).
-3. **LaTeX → PDF** — edit CV.tex (or upload a ready-made .tex, skipping the LLM),
-   **Compile PDF** with the wasm engine → viewer + download. Next to the PDF, the
-   **"Job assistant" chat** answers questions and suggests improvements based on the
-   section's context.
+2. **Markdown** — edit/copy/download CV_OUT.md and cover.md. **CV to LaTeX** and
+   **Cover to LaTeX** → CV.tex and cover.tex (same prompt as `gen-pdf`: extracts the
+   template's skeleton and fills it with the markdown).
+3. **LaTeX → PDF** — edit CV.tex or cover.tex (tabs appear when both exist; or upload
+   a ready-made .tex, skipping the LLM), **Compile PDF** with the wasm engine →
+   viewer + download. Next to the PDF, the **"Job assistant" chat** answers questions
+   and suggests improvements based on the section's context.
 
 ### Fix with LLM — the chain loop
 

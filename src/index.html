@@ -300,7 +300,8 @@
       <button data-nav="1" class="ghost">← Back</button>
       <span class="spacer"></span>
       <button data-nav="3" class="ghost">Next →</button>
-      <button id="btn-to-tex" class="primary big"><svg class="ic"><use href="#i-file"/></svg> Convert to LaTeX (.tex)</button>
+      <button id="btn-cv-to-tex" class="primary big"><svg class="ic"><use href="#i-file"/></svg> CV to LaTeX</button>
+      <button id="btn-cover-to-tex" class="big"><svg class="ic"><use href="#i-file"/></svg> Cover to LaTeX</button>
     </div>
   </section>
 
@@ -312,11 +313,15 @@
     <div class="grid-3" id="step3-grid">
       <div class="card" id="tex-card">
         <div class="card-head">
-          <h2>CV.tex</h2>
+          <h2 id="tex-title">CV.tex</h2>
+          <div class="tex-tabs" id="tex-tabs" role="tablist" aria-label="LaTeX file" hidden>
+            <button type="button" class="tex-tab active" data-tex-tab="tex" role="tab" aria-selected="true">CV.tex</button>
+            <button type="button" class="tex-tab" data-tex-tab="coverTex" role="tab" aria-selected="false">cover.tex</button>
+          </div>
           <span class="actions">
-            <button class="icon-btn" data-copy="tex" title="Copy" aria-label="Copy CV.tex"><svg class="ic"><use href="#i-copy"/></svg></button>
+            <button class="icon-btn" data-copy="tex" title="Copy" aria-label="Copy the .tex"><svg class="ic"><use href="#i-copy"/></svg></button>
             <button class="icon-btn" data-upload="tex" title="Upload a ready .tex (no LLM)" aria-label="Upload .tex from file"><svg class="ic"><use href="#i-upload"/></svg></button>
-            <button class="icon-btn" id="dl-tex" title="Download" aria-label="Download CV.tex"><svg class="ic"><use href="#i-download"/></svg></button>
+            <button class="icon-btn" id="dl-tex" title="Download" aria-label="Download the .tex"><svg class="ic"><use href="#i-download"/></svg></button>
           </span>
         </div>
         <textarea id="tex" rows="16" spellcheck="false" placeholder="Convert in Step 2, upload a .tex, or paste it here…"></textarea>
