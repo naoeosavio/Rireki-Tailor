@@ -255,6 +255,9 @@ main {
 .tex-tab.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 
 .pdf-card { min-height: 0; }
+/* The Log toggle sits at the right end of the actions row, also when the
+ * row wraps on a narrow card. */
+.pdf-log { margin-left: auto; }
 #viewer {
   width: 100%; flex: 1; min-height: 180px;
   border: 1px solid var(--border); border-radius: var(--radius-s);

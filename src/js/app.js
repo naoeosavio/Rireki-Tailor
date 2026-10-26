@@ -246,6 +246,18 @@
     el.scrollTop = el.scrollHeight;
   }
 
+  /* The hidden log leaves its room to the PDF preview. An error opens it
+   * and a successful compile closes it again. */
+  function showLog(show) {
+    const el = $('log');
+    const btn = $('btn-log');
+    if (!el) return;
+    el.hidden = !show;
+    if (!btn) return;
+    btn.setAttribute('aria-expanded', String(show));
+    btn.title = (show ? 'Hide' : 'Show') + ' the compile log';
+  }
+
   function progress(on) {
     $('progress').hidden = !on;
   }
@@ -898,6 +910,7 @@
     lastCompileError = '';
     const logEl = $('log');
     if (logEl) logEl.textContent = '—';
+    showLog(false);
     setStatus('Ready', 'ok');
     saveAll();
     renderSections();
@@ -1649,6 +1662,7 @@
       setStatus(msg, 'err');
       log('fixTex: the chain ended without a compiling document after ' + state.attempt + ' attempt(s).'
         + (state.failure ? ' Last answer: ' + state.failure.status : ''));
+      showLog(true);
       toast(msg, 'err', 9000);
       return;
     }
@@ -1666,6 +1680,7 @@
     // send the model fixing an already-fixed file in circles.
     lastCompileError = '';
     setStatus('LaTeX fixed on attempt ' + state.attempt + ' — PDF generated', 'ok');
+    showLog(false);
     toast('Fixed .tex applied (attempt ' + state.attempt + ')', 'ok');
     /* The PDF belongs to the fixed file: show it only while that file is
      * the one in the editor. */
@@ -1733,6 +1748,7 @@
       lastCompileError = 'Pre-validation refuse (' + texProblem + '). First line: ' + firstLine;
       setStatus('Step 5: ' + texLabel(shownKey) + ' looks like ' + texProblem + ' — it must start with \\documentclass. Regenerate via "CV to LaTeX" or "Cover to LaTeX", or use Fix with LLM.', 'err');
       log('Refusing to compile: ' + texLabel(shownKey) + ' problem = ' + texProblem + '. First line: ' + firstLine);
+      showLog(true);
       toast(texLabel(shownKey) + ' is not LaTeX (' + texProblem + ') — use Fix with LLM or regenerate.', 'err', 6000);
       return;
     } else {
@@ -1755,6 +1771,7 @@
       clearInterval(timer);
       const res = await compileWith(eng, source);
       log('status:', res.status, '(' + ((performance.now() - t0) / 1000).toFixed(0) + 's)');
+      showLog(res.status !== 0);
       if (res.status === 0) {
         lastCompileError = '';
         /* The PDF belongs to the section and the .tex of the compile.
@@ -1789,6 +1806,7 @@
       lastCompileError = String((e && e.message) || e);
       setStatus('COMPILE ERROR: ' + e.message, 'err');
       log('ERROR:', e.message);
+      showLog(true);
       toast('COMPILE ERROR: ' + e.message, 'err');
     } finally {
       clearInterval(timer);
@@ -2267,6 +2285,7 @@
     $('btn-cover-to-tex').addEventListener('click', () => generate((s) => toTex(s, 'cover'), 'btn-cover-to-tex', 'Converting cover to LaTeX'));
     $('btn-fix-tex').addEventListener('click', () => generate(fixTex, 'btn-fix-tex', 'Fixing LaTeX'));
     $('btn-compile').addEventListener('click', compilePdf);
+    $('btn-log').addEventListener('click', () => showLog($('log').hidden));
     $('btn-tex-toggle').addEventListener('click', () => setTexCollapsed(!isTexCollapsed()));
 
     document.querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', () => goTo(+b.dataset.nav)));

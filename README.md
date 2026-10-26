@@ -63,8 +63,10 @@ bar, so the work area keeps the space.
    template's skeleton and fills it with the markdown).
 3. **LaTeX → PDF** — edit CV.tex or cover.tex (tabs appear when both exist; or upload
    a ready-made .tex, skipping the LLM), **Compile PDF** with the wasm engine →
-   viewer + download. Next to the PDF, the **"Job assistant" chat** answers questions
-   and suggests improvements based on the section's context.
+   viewer + download. The compile log stays hidden, so the PDF keeps the room; a
+   failed compile opens it and the **Log** button shows or hides it. Next to the
+   PDF, the **"Job assistant" chat** answers questions and suggests improvements
+   based on the section's context.
 
 ### Fix with LLM — the chain loop
 

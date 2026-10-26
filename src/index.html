@@ -34,6 +34,7 @@
   <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></symbol>
   <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
 </svg>
 
@@ -329,14 +330,14 @@
       </div>
 
       <div class="card pdf-card">
-        <div class="card-head"><h2>PDF</h2></div>
         <div class="actions-row">
           <button id="btn-compile" class="primary big"><svg class="ic"><use href="#i-file"/></svg> Compile PDF</button>
           <button id="btn-fix-tex" class="ghost" title="Send the current .tex plus the last error log to the LLM and apply the fix"><svg class="ic"><use href="#i-bot"/></svg> Fix with LLM</button>
           <button id="dl-pdf" class="ghost"><svg class="ic"><use href="#i-download"/></svg> PDF</button>
+          <button id="btn-log" class="ghost pdf-log" aria-controls="log" aria-expanded="false" title="Show the compile log"><svg class="ic"><use href="#i-terminal"/></svg> Log</button>
         </div>
         <iframe id="viewer" style="display:none" title="PDF preview"></iframe>
-        <pre id="log" class="log">—</pre>
+        <pre id="log" class="log" hidden>—</pre>
       </div>
 
       <aside class="card chat-card" id="chat-panel" aria-label="Job assistant">
@@ -355,9 +356,6 @@
         </div>
         <div id="chat-status" class="hint"></div>
       </aside>
-    </div>
-    <div class="actions-row">
-      <button data-nav="2" class="ghost">← Back</button>
     </div>
   </section>
 

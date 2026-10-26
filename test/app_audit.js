@@ -253,6 +253,59 @@ test('step 3: one .tex file keeps the plain card', async (page) => {
   assert.strictEqual(await page.inputValue('#tex'), 'COVER-TEX', 'cover.tex is not in the editor');
 });
 
+test('step 3: the log hides by default and follows the compile result', async (page) => {
+  await seed(page, {
+    'riki.sections': { s1: section({ tex: '\\documentclass{article}\\begin{document}x\\end{document}' }) },
+    'riki.active': 's1',
+  });
+  await page.evaluate(() => {
+    window.__fail = true;
+    window.PdfTeXEngine = function () {
+      return {
+        loadEngine: () => Promise.resolve(),
+        writeMemFSFile: () => {},
+        setEngineMainFile: () => {},
+        flushCache: () => {},
+        compileLaTeX: () => Promise.resolve(window.__fail
+          ? { status: 1, log: '! Undefined control sequence.', pdf: null }
+          : { status: 0, log: '', pdf: new Uint8Array([37, 80, 68, 70]) }),
+      };
+    };
+  });
+  await page.click('[data-nav="3"]');
+  await page.waitForTimeout(200);
+
+  const logHidden = () => page.$eval('#log', (e) => e.hidden);
+  assert.strictEqual(await logHidden(), true, 'the log is shown before any error');
+  await page.click('#btn-log');
+  assert.strictEqual(await logHidden(), false, 'the button does not show the log');
+  await page.click('#btn-log');
+  assert.strictEqual(await logHidden(), true, 'the button does not hide the log');
+
+  await page.click('#btn-compile');
+  await page.waitForFunction(
+    () => document.getElementById('status').textContent.indexOf('COMPILE ERROR') === 0,
+    null,
+    { timeout: 30000 }
+  );
+  assert.strictEqual(await logHidden(), false, 'a failed compile left the log hidden');
+  assert.strictEqual(
+    await page.$eval('#btn-log', (b) => b.getAttribute('aria-expanded')),
+    'true',
+    'the button does not report the open log'
+  );
+
+  await page.evaluate(() => { window.__fail = false; });
+  await page.click('#btn-compile');
+  await page.waitForFunction(
+    () => document.getElementById('status').textContent.indexOf('PDF generated') === 0,
+    null,
+    { timeout: 30000 }
+  );
+  assert.strictEqual(await logHidden(), true, 'a successful compile kept the log open');
+  assert.deepStrictEqual(take_errors(), [], 'uncaught page errors');
+});
+
 test('step 2: two convert buttons replace the single one', async (page) => {
   await seed(page, { 'riki.sections': { s1: section() }, 'riki.active': 's1' });
   await page.click('[data-nav="2"]');
