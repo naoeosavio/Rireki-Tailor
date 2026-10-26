@@ -686,7 +686,14 @@ footer {
 
 
 /* ---------- step3 view toggles (space-saving) ---------- */
-.viewbar { gap: 12px; }
+.viewbar {
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 2px 2px 0;
+  background: transparent;
+  border: 0;
+}
+.view-label { color: var(--muted); font-size: .82em; font-weight: 600; }
 .view-toggles { display: inline-flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 .byok-note { border: 1px dashed var(--border-strong); border-radius: var(--radius-s); padding: 8px 10px; }
 .key-status { font-weight: 700; white-space: nowrap; }

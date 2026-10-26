@@ -1864,7 +1864,6 @@
     const pdf = document.querySelector('#step3-grid .pdf-card');
     const chat = $('chat-panel');
     const grid = $('step3-grid');
-    const btn = $('btn-tex-toggle');
     if (!grid) return;
     if (card) card.style.display = view3.code ? '' : 'none';
     if (pdf) pdf.style.display = view3.pdf ? '' : 'none';
@@ -1876,7 +1875,6 @@
     const visible = (view3.code ? 1 : 0) + (view3.pdf ? 1 : 0) + (view3.chat ? 1 : 0);
     grid.classList.toggle('grid-2', visible <= 2);
     grid.classList.toggle('grid-3', visible >= 3);
-    if (btn) btn.setAttribute('aria-expanded', String(view3.code));
     const vc = $('view-code');
     const vp = $('view-pdf');
     const vh = $('view-chat');
@@ -2396,7 +2394,9 @@
     $('btn-fix-tex').addEventListener('click', () => generate(fixTex, 'btn-fix-tex', 'Fixing LaTeX'));
     $('btn-compile').addEventListener('click', compilePdf);
     $('btn-log').addEventListener('click', () => showLog($('log').hidden));
-    $('btn-tex-toggle').addEventListener('click', () => setTexCollapsed(!isTexCollapsed()));
+    // NOTE: #btn-tex-toggle was removed from the layout redesign.
+    // Code visibility is driven only by the #view-code toggle now.
+    // setTexCollapsed/isTexCollapsed stay as compat shims.
 
     document.querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', () => goTo(+b.dataset.nav)));
 
