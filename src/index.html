@@ -116,6 +116,7 @@
             </span>
           </div>
           <p class="hint" id="vendor-pick-hint">Selecione um provedor ao lado para configurar modelo e chave.</p>
+          <p class="hint byok-note">BYOK - suas keys, no seu browser. Nada sai daqui: a chave fica so no seu localStorage e a chamada vai direto do navegador ao provedor. Sem servidor, sem assinatura, sem cobranca nesta versao. <span id="cfg-key-status" class="key-status">sem chave</span></p>
           <form id="cfg-panel" onsubmit="return false" hidden>
             <label>Modelo selecionado:
               <input id="cfg-model" list="cfg-model-list" placeholder="ex: gemini-2.5-flash">
@@ -151,7 +152,7 @@
                 <textarea id="cfg-headers" rows="2" spellcheck="false" placeholder='{"x-tenant":"acme"}'></textarea>
               </label>
             </div>
-            <p class="hint">The field completes with the aliases of the provider. Full spec: <code>vendor:model:thinking</code>. Each provider keeps its own model. Keys live in your browser's localStorage.</p>
+            <p class="hint">The field completes with the aliases of the provider. Full spec: <code>vendor:model:thinking</code>. Each provider keeps its own model. Keys live only in your browser's localStorage (BYOK) — this build has no paywall, no ads, no server billing.</p>
           </form>
         </div>
       </div>
@@ -308,9 +309,20 @@
 
   <!-- ============ STEP 3 — LaTeX to PDF ============ -->
   <section class="panel" id="panel3" style="display:none">
-    <div class="actions-row">
-      <button id="btn-tex-toggle" class="ghost" aria-expanded="true"><svg class="ic"><use href="#i-file"/></svg> Ver / Editar o código LaTeX (avançada)</button>
+    <div class="actions-row viewbar" role="group" aria-label="Step 3 view">
+      <button id="btn-tex-toggle" class="ghost" aria-expanded="false"><svg class="ic"><use href="#i-file"/></svg> Ver / Editar o código LaTeX (avançado)</button>
+      <span class="spacer"></span>
+      <span class="view-toggles" role="group" aria-label="Show panels">
+        <label class="check toggle"><input type="checkbox" id="view-code"><span class="toggle-track" aria-hidden="true"></span> Código</label>
+        <label class="check toggle"><input type="checkbox" id="view-pdf" checked><span class="toggle-track" aria-hidden="true"></span> PDF</label>
+        <label class="check toggle"><input type="checkbox" id="view-chat" checked><span class="toggle-track" aria-hidden="true"></span> Assistente</label>
+      </span>
     </div>
+    <!-- Future monetization slots (OFF in this branch): partner/ad and upgrade.
+         Kept as empty hidden placeholders so the layout reserves no space now
+         and a later paywall/ads branch can fill them without reflow. -->
+    <div id="slot-partner" class="slot-placeholder" data-monetization="partner" hidden></div>
+    <div id="slot-upgrade" class="slot-placeholder" data-monetization="upgrade" hidden></div>
     <div class="grid-3" id="step3-grid">
       <div class="card" id="tex-card">
         <div class="card-head">

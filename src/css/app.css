@@ -684,6 +684,28 @@ footer {
   color: var(--muted); font-size: .8em; background: var(--bg2);
 }
 
+
+/* ---------- step3 view toggles (space-saving) ---------- */
+.viewbar { gap: 12px; }
+.view-toggles { display: inline-flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.byok-note { border: 1px dashed var(--border-strong); border-radius: var(--radius-s); padding: 8px 10px; }
+.key-status { font-weight: 700; white-space: nowrap; }
+.key-status.has-key { color: oklch(.78 .17 162); }
+.key-status.no-key { color: var(--warn); }
+html[data-theme="light"] .key-status.has-key { color: #047857; }
+/* Future monetization slots: hidden and zero-space in this branch. */
+.slot-placeholder[hidden] { display: none !important; }
+.slot-placeholder {
+  border: 1px dashed var(--border-strong); border-radius: var(--radius);
+  padding: 12px; color: var(--muted); font-size: .85em;
+}
+/* Step 3 panel visibility states driven by the toggles. */
+#step3-grid.hide-code.hide-chat { grid-template-columns: minmax(360px, 1fr); }
+#step3-grid.hide-code { grid-template-columns: minmax(360px, 1.15fr) minmax(300px, 380px); }
+#step3-grid.hide-chat { grid-template-columns: minmax(300px, 1fr) minmax(360px, 1.15fr); }
+#step3-grid.hide-pdf.hide-chat { grid-template-columns: minmax(300px, 1fr); }
+#step3-grid.hide-pdf { grid-template-columns: minmax(300px, 1fr) minmax(300px, 380px); }
+
 /* ---------- responsivo ---------- */
 /* Three columns need about 1040 px. Below that, the chat moves to a row. */
 @media (max-width: 1100px) {

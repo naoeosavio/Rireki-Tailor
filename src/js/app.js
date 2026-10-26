@@ -19,6 +19,12 @@
   const LIB_MAX_MASTERS = 2;
   const LIB_MAX_TEMPLATES = 4;
 
+  // Space-saving layout branch: no paywall, no ads, no partner slots.
+  // The hidden #slot-* placeholders in index.html stay empty while this
+  // is false; a future monetization branch flips it and fills them.
+  const MONETIZATION_ENABLED = false;
+  const LS_VIEW3 = 'riki.view3';
+
   function libMax(kind) {
     if (kind === 'master') {
       return LIB_MAX_MASTERS;
@@ -1828,22 +1834,107 @@
     viewer.style.display = 'block';
   }
 
-  // The tex editor collapses to a button row. Expanded shows tex plus PDF
-  // plus chat as before. Collapsed shows PDF plus chat in 2 columns.
-  function setTexCollapsed(collapsed) {
+  // Step 3 view state: code / pdf / chat toggles. Code starts hidden
+  // (advanced) so the PDF keeps the room; the user enables it on demand.
+  // At least one panel stays visible. Persisted in localStorage.
+  let view3 = { code: false, pdf: true, chat: true };
+
+  function loadView3() {
+    try {
+      const raw = localStorage.getItem(LS_VIEW3);
+      if (!raw) return;
+      const v = JSON.parse(raw);
+      if (v && typeof v === 'object') {
+        view3.code = v.code === true;
+        view3.pdf = v.pdf !== false;
+        view3.chat = v.chat !== false;
+        if (!view3.pdf && !view3.chat && !view3.code) view3.pdf = true;
+      }
+    } catch (_) { /* keep defaults */ }
+  }
+
+  function saveView3() {
+    try {
+      localStorage.setItem(LS_VIEW3, JSON.stringify(view3));
+    } catch (_) { /* storage blocked */ }
+  }
+
+  function applyView3() {
     const card = $('tex-card');
+    const pdf = document.querySelector('#step3-grid .pdf-card');
+    const chat = $('chat-panel');
     const grid = $('step3-grid');
     const btn = $('btn-tex-toggle');
-    if (!card || !grid || !btn) return;
-    card.style.display = collapsed ? 'none' : '';
-    grid.classList.toggle('grid-2', collapsed);
-    grid.classList.toggle('grid-3', !collapsed);
-    btn.setAttribute('aria-expanded', String(!collapsed));
+    if (!grid) return;
+    if (card) card.style.display = view3.code ? '' : 'none';
+    if (pdf) pdf.style.display = view3.pdf ? '' : 'none';
+    if (chat) chat.style.display = view3.chat ? '' : 'none';
+    grid.classList.toggle('hide-code', !view3.code);
+    grid.classList.toggle('hide-pdf', !view3.pdf);
+    grid.classList.toggle('hide-chat', !view3.chat);
+    // Keep a 2-col fallback for browsers without the hide-* rules.
+    const visible = (view3.code ? 1 : 0) + (view3.pdf ? 1 : 0) + (view3.chat ? 1 : 0);
+    grid.classList.toggle('grid-2', visible <= 2);
+    grid.classList.toggle('grid-3', visible >= 3);
+    if (btn) btn.setAttribute('aria-expanded', String(view3.code));
+    const vc = $('view-code');
+    const vp = $('view-pdf');
+    const vh = $('view-chat');
+    if (vc) vc.checked = view3.code;
+    if (vp) vp.checked = view3.pdf;
+    if (vh) vh.checked = view3.chat;
+    renderMonetizationSlots();
+  }
+
+  function bindViewToggles() {
+    const vc = $('view-code');
+    const vp = $('view-pdf');
+    const vh = $('view-chat');
+    if (vc) vc.addEventListener('change', () => {
+      view3.code = vc.checked;
+      if (!view3.code && !view3.pdf && !view3.chat) { view3.pdf = true; }
+      saveView3();
+      applyView3();
+    });
+    if (vp) vp.addEventListener('change', () => {
+      view3.pdf = vp.checked;
+      if (!view3.code && !view3.pdf && !view3.chat) { view3.code = view3.code; view3.pdf = true; }
+      saveView3();
+      applyView3();
+    });
+    if (vh) vh.addEventListener('change', () => {
+      view3.chat = vh.checked;
+      if (!view3.code && !view3.pdf && !view3.chat) { view3.pdf = true; }
+      saveView3();
+      applyView3();
+    });
+  }
+
+  // Future monetization entry point. OFF here: slots stay hidden and empty.
+  function renderMonetizationSlots() {
+    const ids = ['slot-partner', 'slot-upgrade'];
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (!MONETIZATION_ENABLED) {
+        el.hidden = true;
+        el.innerHTML = '';
+        return;
+      }
+      el.hidden = false;
+    });
+  }
+
+  // Back-compat for the single "advanced LaTeX" button.
+  function setTexCollapsed(collapsed) {
+    view3.code = !collapsed;
+    if (!view3.code && !view3.pdf && !view3.chat) view3.pdf = true;
+    saveView3();
+    applyView3();
   }
 
   function isTexCollapsed() {
-    const card = $('tex-card');
-    return Boolean(card && card.style.display === 'none');
+    return !view3.code;
   }
 
   // ---------- Stepper ----------
@@ -1913,6 +2004,8 @@
     if (parsed) labels.push(parsed.vendor);
     if (masterName) labels.push(masterName.slice(0, 28));
     if (modelKey) labels.push(modelKey);
+    const hasKey = Boolean(parsed && config.keys && config.keys[parsed.vendor]);
+    labels.push(hasKey ? 'key ok (browser)' : 'sem key');
     labels.forEach((t) => {
       const c = document.createElement('span');
       c.className = 'setup-chip';
@@ -2008,6 +2101,16 @@
     }
   }
 
+  function renderKeyStatus() {
+    const el = $('cfg-key-status');
+    if (!el) return;
+    const v = selectedVendor;
+    const has = Boolean(v && config.keys && typeof config.keys[v] === 'string' && config.keys[v]);
+    el.textContent = !v ? 'escolha um provedor' : (has ? '\u25CF chave salva neste browser' : 'sem chave — cole sua key');
+    el.classList.toggle('has-key', has);
+    el.classList.toggle('no-key', !has);
+  }
+
   function renderVendorCards() {
     const grid = $('vendor-grid');
     if (!grid) return;
@@ -2073,6 +2176,7 @@
     }
     renderModelList();
     renderModelSpec();
+    renderKeyStatus();
   }
 
   function fillConfig() {
@@ -2125,6 +2229,8 @@
       config.keys[selectedVendor] = keyEl.value.trim();
       markSetupDone();
       saveAllDebounced();
+      renderKeyStatus();
+      renderSetupSummary();
     });
     const eye = $('btn-key-eye');
     if (eye) eye.addEventListener('click', () => {
@@ -2233,9 +2339,13 @@
     $('btn-save-master-model').addEventListener('click', () => saveModelFromSection('master'));
     $('btn-save-template-model').addEventListener('click', () => saveModelFromSection('template'));
 
+    loadView3();
     renderSections();
     fillStep1();
     fillConfig();
+    bindViewToggles();
+    applyView3();
+    renderMonetizationSlots();
     applySetupAutoState();
     renderLibrary();
     bindFields();
