@@ -383,10 +383,9 @@ async function runRuntime(message, cfg, opts) {
   return await runtime.run(message);
 }
 
-async function tellChat(userPrompt, config) {
+async function tellChat(userPrompt, config, opts) {
   const cfg = await assertKey(config);
-  const result = await runRuntime(userPrompt, cfg, null);
-  return cleanAnswer(result.text);
+  return cleanAnswer((await runRuntime(userPrompt, cfg, opts || null)).text);
 }
 
 // Chat mode: contextual system prompt + accumulated history in `context`.

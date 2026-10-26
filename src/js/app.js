@@ -1327,6 +1327,8 @@
   let opCancelled = false;
   let opCancelToken = null;
   let opLabel = '';
+  let opGen = 0;
+  let opCancelReject = null;
 
   function setCancelVisible(on, label) {
     const b = $('btn-cancel-op');
@@ -1342,8 +1344,12 @@
   function cancelCurrentOp() {
     if (!opBusy && !compileBusy) return;
     opCancelled = true;
+    opGen++;
     try { if (opCancelToken && typeof opCancelToken.cancel === 'function') opCancelToken.cancel(); } catch (_) {}
     setStatus('Cancelando…', 'warn');
+    // Unblocks generate() instantly even if the model HTTP is still in
+    // flight: the late answer is discarded by the generation check.
+    try { if (opCancelReject) opCancelReject({ code: 'CANCELLED' }); } catch (_) {}
   }
 
   function isOpCancelled() { return opCancelled === true; }
@@ -1354,19 +1360,24 @@
     if (opBusy) { toast('Ainda trabalhando — use Cancelar para interromper.', 'warn'); return; }
     opBusy = true;
     opCancelled = false;
+    const myGen = ++opGen;
     opCancelToken = (typeof createCancelToken === 'function') ? createCancelToken() : null;
     setBusy(btnId, true);
     if (busyLabel) setStatus(busyLabel + '…', 'busy');
     setCancelVisible(true, busyLabel || 'operação');
     progress(true);
+    const cancelGate = new Promise((_, reject) => { opCancelReject = reject; });
     try {
-      await fn(s, { cancellation: opCancelToken, isCancelled: isOpCancelled });
-      if (isOpCancelled()) {
+      await Promise.race([
+        fn(s, { cancellation: opCancelToken, isCancelled: isOpCancelled, gen: myGen }),
+        cancelGate,
+      ]);
+      if (myGen !== opGen || isOpCancelled()) {
         setStatus('Operação cancelada — nada foi alterado.', 'warn');
         toast('Operação cancelada.', 'warn');
       }
     } catch (e) {
-      if (isOpCancelled()) {
+      if ((e && e.code === 'CANCELLED') || myGen !== opGen || isOpCancelled()) {
         setStatus('Operação cancelada — nada foi alterado.', 'warn');
       } else {
         const msg = e && e.code === 'NO_KEY'
@@ -1379,10 +1390,18 @@
     } finally {
       opBusy = false;
       opCancelToken = null;
+      opCancelReject = null;
       setBusy(btnId, false);
-      setCancelVisible(false);
+      // A late loser of the race must not hide a newer op's Cancel button.
+      // After a Cancel with no newer op, hide it (opCancelled is still true).
+      if (myGen === opGen || isOpCancelled()) setCancelVisible(false);
       progress(false);
     }
+  }
+
+  // Stale background answers (after Cancel) must not touch the section.
+  function isStaleGen(opt) {
+    return Boolean(opt && typeof opt.gen === 'number' && opt.gen !== opGen);
   }
 
   async function genCvOut(s) {
@@ -1498,7 +1517,7 @@
     updateCounter('tex');
   }
 
-  async function toTex(s, kind) {
+  async function toTex(s, kind, op) {
     const isCover = kind === 'cover';
     const key = isCover ? 'coverTex' : 'tex';
     const hashKey = isCover ? 'coverTexHash' : 'texHash';
@@ -1525,7 +1544,8 @@
     setStatus('Convertendo ' + (isCover ? 'cover.md' : 'markdown') + ' → LaTeX com ' + config.model + '…', 'busy');
     // Validate before assigning: a truncated/markdown reply must not
     // clobber a previous working tex (same rule fixTex follows).
-    const fresh = sanitizeTex(await tellChat(buildTexPrompt(source, s.template, isCover ? 'cover' : 'cv'), config));
+    const fresh = sanitizeTex(await tellChat(buildTexPrompt(source, s.template, isCover ? 'cover' : 'cv'), config, op && op.cancellation ? { cancellation: op.cancellation } : null));
+    if (isStaleGen(op) || (op && op.isCancelled && op.isCancelled())) return;
     const texProblem = getTexProblem(fresh);
     if (texProblem) {
       setStatus('LLM returned markdown, not LaTeX (' + texProblem + ') — previous ' + texLabel(key) + ' kept. Regenerate or paste a .tex starting with \\documentclass.', 'err');
@@ -1598,7 +1618,8 @@
   // Sends the current .tex plus the last compiler error to the LLM, compiles
   // the answer, and repeats until the document compiles. Never clears tex on
   // failure.
-  async function fixTex(s) {
+  async function fixTex(s, op) {
+    const myGen = op && typeof op.gen === 'number' ? op.gen : opGen;
     const key = texShown;
     const source = String(s[key] || '');
     if (!source.trim()) { toast('Nothing to fix — ' + texLabel(key) + ' is empty.', 'warn'); return; }
@@ -1642,11 +1663,14 @@
     const turn = {
       run: async () => {
         state.attempt++;
-        if (isOpCancelled()) {
+        if (myGen !== opGen || isOpCancelled()) {
           return { status: 'completed', text: '', timeline: ['Attempt ' + state.attempt + ': cancelled by user'], commands: [] };
         }
         setStatus('Corrigindo LaTeX — tentativa ' + state.attempt + '/' + rounds + '…', 'busy');
-        const raw = await tellChat(buildFixTexPrompt(state.tex, state.error, state.template), config);
+        const raw = await tellChat(buildFixTexPrompt(state.tex, state.error, state.template), config, op && op.cancellation ? { cancellation: op.cancellation } : null);
+        if (myGen !== opGen || isOpCancelled()) {
+          return { status: 'completed', text: '', timeline: ['Attempt ' + state.attempt + ': cancelled by user'], commands: [] };
+        }
         const fixed = sanitizeTex(raw);
         const problem = getTexProblem(fixed);
         if (problem) {
@@ -1708,7 +1732,7 @@
     } finally {
       compileBusy = false;
     }
-    if (isOpCancelled()) {
+    if (myGen !== opGen || isOpCancelled()) {
       setStatus('Correção cancelada — ' + texLabel(key) + ' mantido como estava.', 'warn');
       showLog(false);
       return;
@@ -2463,8 +2487,8 @@
 
     $('btn-gen-cv').addEventListener('click', () => generate(genCvOut, 'btn-gen-cv', 'Gerando CV_OUT.md'));
     $('btn-gen-cover').addEventListener('click', () => generate(genCover, 'btn-gen-cover', 'Gerando cover.md'));
-    $('btn-cv-to-tex').addEventListener('click', () => generate((s) => toTex(s, 'cv'), 'btn-cv-to-tex', 'Convertendo CV p/ LaTeX'));
-    $('btn-cover-to-tex').addEventListener('click', () => generate((s) => toTex(s, 'cover'), 'btn-cover-to-tex', 'Convertendo cover p/ LaTeX'));
+    $('btn-cv-to-tex').addEventListener('click', () => generate((s, op) => toTex(s, 'cv', op), 'btn-cv-to-tex', 'Convertendo CV p/ LaTeX'));
+    $('btn-cover-to-tex').addEventListener('click', () => generate((s, op) => toTex(s, 'cover', op), 'btn-cover-to-tex', 'Convertendo cover p/ LaTeX'));
     $('btn-fix-tex').addEventListener('click', () => generate(fixTex, 'btn-fix-tex', 'Corrigindo LaTeX'));
     $('btn-compile').addEventListener('click', compilePdf);
     $('btn-log').addEventListener('click', () => showLog($('log').hidden));
