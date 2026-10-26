@@ -695,6 +695,11 @@ footer {
 }
 .view-label { color: var(--muted); font-size: .82em; font-weight: 600; }
 .view-toggles { display: inline-flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+/* Cancel op + engine status (header): Cancelar só aparece durante a operação. */
+#btn-cancel-op { border-color: var(--warn); color: var(--warn); font-weight: 700; white-space: nowrap; }
+#btn-cancel-op:hover:not(:disabled) { background: var(--warn-bg); border-color: var(--warn); }
+#btn-cancel-op[hidden] { display: none !important; }
+#engine-status { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .byok-note { border: 1px dashed var(--border-strong); border-radius: var(--radius-s); padding: 8px 10px; }
 .key-status { font-weight: 700; white-space: nowrap; }
 .key-status.has-key { color: oklch(.78 .17 162); }

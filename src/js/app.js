@@ -1321,25 +1321,66 @@
   // ---------- LLM ----------
   // Single in-flight LLM op: concurrent runs on the same section would
   // interleave tellChat calls and last-writer-wins the same fields.
+  // Cooperative cancel: the Cancel button flags the op; the chain checks
+  // the flag between attempts and the ignored answer never lands.
   let opBusy = false;
+  let opCancelled = false;
+  let opCancelToken = null;
+  let opLabel = '';
+
+  function setCancelVisible(on, label) {
+    const b = $('btn-cancel-op');
+    if (!b) return;
+    if (typeof label === 'string' && label) opLabel = label;
+    b.hidden = !on;
+    b.innerHTML = '';
+    const t = document.createElement('span');
+    t.textContent = 'Cancelar' + (on && opLabel ? ' — ' + opLabel : '');
+    b.appendChild(t);
+  }
+
+  function cancelCurrentOp() {
+    if (!opBusy && !compileBusy) return;
+    opCancelled = true;
+    try { if (opCancelToken && typeof opCancelToken.cancel === 'function') opCancelToken.cancel(); } catch (_) {}
+    setStatus('Cancelando…', 'warn');
+  }
+
+  function isOpCancelled() { return opCancelled === true; }
 
   async function generate(fn, btnId, busyLabel) {
     const s = active();
     if (!s) return;
-    if (opBusy) { toast('Still working — wait for the current task to finish.', 'warn'); return; }
+    if (opBusy) { toast('Ainda trabalhando — use Cancelar para interromper.', 'warn'); return; }
     opBusy = true;
+    opCancelled = false;
+    opCancelToken = (typeof createCancelToken === 'function') ? createCancelToken() : null;
     setBusy(btnId, true);
     if (busyLabel) setStatus(busyLabel + '…', 'busy');
+    setCancelVisible(true, busyLabel || 'operação');
     progress(true);
     try {
-      await fn(s);
+      await fn(s, { cancellation: opCancelToken, isCancelled: isOpCancelled });
+      if (isOpCancelled()) {
+        setStatus('Operação cancelada — nada foi alterado.', 'warn');
+        toast('Operação cancelada.', 'warn');
+      }
     } catch (e) {
-      setStatus('ERROR: ' + e.message, 'err');
-      log('ERROR:', e.message);
-      toast(e.code === 'NO_KEY' ? e.message + ' Open the menu (LLM).' : e.message, 'err', 6000);
+      if (isOpCancelled()) {
+        setStatus('Operação cancelada — nada foi alterado.', 'warn');
+      } else {
+        const msg = e && e.code === 'NO_KEY'
+          ? 'Falta a chave da IA: abra Configuração (LLM) e cole sua key. Suas keys ficam só no seu browser.'
+          : (e && e.message ? e.message : String(e));
+        setStatus('Erro: ' + msg, 'err');
+        log('ERROR:', msg);
+        toast(e && e.code === 'NO_KEY' ? msg + ' Abra o menu (LLM).' : msg, 'err', 6000);
+      }
     } finally {
       opBusy = false;
+      opCancelToken = null;
       setBusy(btnId, false);
+      setCancelVisible(false);
       progress(false);
     }
   }
@@ -1347,7 +1388,7 @@
   async function genCvOut(s) {
     if (!s.role.trim()) { toast('Paste the job description before generating the CV.', 'warn'); return; }
     if (!s.master.trim()) { toast('The master CV is empty — upload or paste a CV.', 'warn'); return; }
-    setStatus('Generating CV_OUT.md (' + config.model + ')…', 'busy');
+    setStatus('Gerando CV_OUT.md com ' + config.model + '…', 'busy');
     s.cvOut = sanitizeFenced(await tellChat(buildAtsPrompt(s.master, s.lang, s.role), config));
     touch(s); saveAll();
     /* The user can change the section while the model works. The answer
@@ -1358,14 +1399,14 @@
     }
     $('cvOut').value = s.cvOut;
     updateCounter('cvOut');
-    setStatus('CV_OUT.md generated — review it in Step 2', 'ok');
-    toast('CV_OUT.md ready in Step 2', 'ok');
+    setStatus('CV_OUT.md pronto — revise na Etapa 2', 'ok');
+    toast('CV_OUT.md pronto na Etapa 2', 'ok');
     goTo(2);
   }
 
   async function genCover(s) {
     if (!(s.cvOut.trim() || s.master.trim())) { toast('Generate CV_OUT.md or have a master CV before the cover letter.', 'warn'); return; }
-    setStatus('Generating cover.md (' + config.model + ')…', 'busy');
+    setStatus('Gerando cover.md com ' + config.model + '…', 'busy');
     s.cover = sanitizeFenced(await tellChat(buildCoverPrompt(s.cvOut || s.master, s.lang, s.role, s.pitch), config));
     touch(s); saveAll();
     if (active() !== s) {
@@ -1374,8 +1415,8 @@
     }
     $('cover').value = s.cover;
     updateCounter('cover');
-    setStatus('cover.md generated — review it in Step 2', 'ok');
-    toast('cover.md ready in Step 2', 'ok');
+    setStatus('cover.md pronta — revise na Etapa 2', 'ok');
+    toast('cover.md pronta na Etapa 2', 'ok');
     goTo(2);
   }
 
@@ -1481,7 +1522,7 @@
       });
       if (!ok) return;
     }
-    setStatus('Converting ' + (isCover ? 'cover.md' : 'markdown') + ' → LaTeX (' + config.model + ')…', 'busy');
+    setStatus('Convertendo ' + (isCover ? 'cover.md' : 'markdown') + ' → LaTeX com ' + config.model + '…', 'busy');
     // Validate before assigning: a truncated/markdown reply must not
     // clobber a previous working tex (same rule fixTex follows).
     const fresh = sanitizeTex(await tellChat(buildTexPrompt(source, s.template, isCover ? 'cover' : 'cv'), config));
@@ -1579,7 +1620,7 @@
       return;
     }
     const rounds = fixMaxRounds();
-    setStatus('Fixing LaTeX (' + config.model + ')…', 'busy');
+    setStatus('Corrigindo LaTeX com ' + config.model + ' (até ' + rounds + ' tentativas)…', 'busy');
     const sectionId = activeId;
     // The broken tex already carries its own preamble when it has one;
     // sending the library template on top only bloats the prompt and
@@ -1593,14 +1634,18 @@
       ok: false,
       pdf: null,
     };
-    const cancel = createCancelToken();
+    const cancel = opCancelToken || createCancelToken();
+    if (!opCancelToken) opCancelToken = cancel;
     /* One turn of the chain: the model repairs, the app compiles. A failed
      * compile comes back as a failed command, and the core starts the next
      * round with it. */
     const turn = {
       run: async () => {
         state.attempt++;
-        setStatus('Fixing LaTeX — attempt ' + state.attempt + '/' + rounds + '…', 'busy');
+        if (isOpCancelled()) {
+          return { status: 'completed', text: '', timeline: ['Attempt ' + state.attempt + ': cancelled by user'], commands: [] };
+        }
+        setStatus('Corrigindo LaTeX — tentativa ' + state.attempt + '/' + rounds + '…', 'busy');
         const raw = await tellChat(buildFixTexPrompt(state.tex, state.error, state.template), config);
         const fixed = sanitizeTex(raw);
         const problem = getTexProblem(fixed);
@@ -1663,8 +1708,13 @@
     } finally {
       compileBusy = false;
     }
+    if (isOpCancelled()) {
+      setStatus('Correção cancelada — ' + texLabel(key) + ' mantido como estava.', 'warn');
+      showLog(false);
+      return;
+    }
     if (!state.ok) {
-      const msg = 'Could not fix the LaTeX in ' + state.attempt + ' attempt(s) — rewrite ' + texLabel(key) + ' by hand or regenerate it with "CV to LaTeX" or "Cover to LaTeX".';
+      const msg = 'Não consegui corrigir o LaTeX em ' + state.attempt + ' tentativa(s) — reescreva ' + texLabel(key) + ' à mão ou regenere com "CV to LaTeX" / "Cover to LaTeX".';
       setStatus(msg, 'err');
       log('fixTex: the chain ended without a compiling document after ' + state.attempt + ' attempt(s).'
         + (state.failure ? ' Last answer: ' + state.failure.status : ''));
@@ -1685,7 +1735,7 @@
     // Consumed: reusing the pre-fix log against the new tex would
     // send the model fixing an already-fixed file in circles.
     lastCompileError = '';
-    setStatus('LaTeX fixed on attempt ' + state.attempt + ' — PDF generated', 'ok');
+    setStatus('LaTeX corrigido na tentativa ' + state.attempt + ' — PDF gerado', 'ok');
     showLog(false);
     toast('Fixed .tex applied (attempt ' + state.attempt + ')', 'ok');
     /* The PDF belongs to the fixed file: show it only while that file is
@@ -1694,6 +1744,21 @@
   }
 
   // ---------- Step 5 / Engine ----------
+  // Motor PDF local (SwiftLaTeX wasm). Fica pronto em background depois do
+  // boot, então o primeiro Compile não parece "travado".
+  function setEngineStatus(txt) {
+    const el = $('engine-status');
+    if (el) el.textContent = txt;
+  }
+
+  function prewarmEngine() {
+    setEngineStatus('Motor PDF: carregando…');
+    getEngine().then(
+      () => setEngineStatus('Motor PDF: pronto'),
+      () => setEngineStatus('Motor PDF: falhou — tente Compilar mesmo assim')
+    );
+  }
+
   function getEngine() {
     if (engine) return Promise.resolve(engine);
     if (!enginePromise) {
@@ -1701,11 +1766,13 @@
        * constructor or in loadEngine must not stay cached, or every later
        * compile fails with the same error and no retry. */
       const promise = (async () => {
-        setStatus('Loading LaTeX engine (first time ~1 min)…', 'busy');
+        setStatus('Carregando motor PDF (só na primeira vez)…', 'busy');
+        setEngineStatus('Motor PDF: carregando…');
         const e = new PdfTeXEngine();
         await e.loadEngine();
         engine = e;
-        setStatus('Engine ready', 'ok');
+        setEngineStatus('Motor PDF: pronto');
+        setStatus('Motor PDF pronto', 'ok');
         return e;
       })();
       enginePromise = promise;
@@ -1740,8 +1807,8 @@
     const shownKey = texShown;
     const source = String(s[shownKey] || '');
     if (!source.trim()) {
-      setStatus('Step 5: ' + texLabel(shownKey) + ' is empty — generate or paste a .tex.', 'warn');
-      toast('Compile what? ' + texLabel(shownKey) + ' is empty.', 'warn');
+      setStatus(texLabel(shownKey) + ' vazio — gere ou cole um .tex.', 'warn');
+      toast('Nada para compilar: ' + texLabel(shownKey) + ' está vazio.', 'warn');
       return;
     }
     // Block markdown before it reaches PdfTeX, where it fails with the
@@ -1752,7 +1819,7 @@
       // The fix prompt already receives the tex as BROKEN .TEX — storing
       // another copy here only bloats it toward truncation.
       lastCompileError = 'Pre-validation refuse (' + texProblem + '). First line: ' + firstLine;
-      setStatus('Step 5: ' + texLabel(shownKey) + ' looks like ' + texProblem + ' — it must start with \\documentclass. Regenerate via "CV to LaTeX" or "Cover to LaTeX", or use Fix with LLM.', 'err');
+      setStatus(texLabel(shownKey) + ' parece ' + texProblem + ' — precisa começar com \\documentclass. Regenere com "CV to LaTeX" / "Cover to LaTeX" ou use Corrigir com IA.', 'err');
       log('Refusing to compile: ' + texLabel(shownKey) + ' problem = ' + texProblem + '. First line: ' + firstLine);
       showLog(true);
       toast(texLabel(shownKey) + ' is not LaTeX (' + texProblem + ') — use Fix with LLM or regenerate.', 'err', 6000);
@@ -1761,7 +1828,9 @@
       // Valid-looking LaTeX below — proceed to the engine.
     }
     setBusy('btn-compile', true);
-    setStatus('Compiling PDF (first time ~20 min)…', 'busy');
+    opCancelled = false;
+    setCancelVisible(true, 'compilação PDF');
+    setStatus(engine ? 'Compilando PDF… (motor local pronto)' : 'Compilando PDF… (carregando motor na primeira vez)', 'busy');
     log('--- compile start (' + now() + ') ---');
     progress(true);
     compileBusy = true;
@@ -1770,8 +1839,8 @@
     const sectionId = activeId;
     const t0 = performance.now();
     const timer = setInterval(() => {
-      setStatus('Compiling PDF… ' + ((performance.now() - t0) / 1000).toFixed(0) + 's', 'busy');
-    }, 30000);
+      setStatus('Compilando PDF… ' + ((performance.now() - t0) / 1000).toFixed(0) + 's (motor local)', 'busy');
+    }, 10000);
     try {
       const eng = await getEngine();
       clearInterval(timer);
@@ -1790,20 +1859,24 @@
             : 'PDF compiled for ' + texLabel(shownKey) + ' — switch back to it to see the PDF.', 'ok');
           return;
         }
+        if (isOpCancelled()) {
+          setStatus('Compilação cancelada.', 'warn');
+          return;
+        }
         showPdf(res.pdf, sectionId, shownKey);
-        setStatus('PDF generated (' + res.pdf.length + ' bytes)', 'ok');
-        toast('PDF compiled successfully', 'ok');
+        setStatus('PDF gerado (' + res.pdf.length + ' bytes)', 'ok');
+        toast('PDF compilado com sucesso', 'ok');
       } else {
         // Cap at store time: transcripts can be megabytes and this value
         // lives for the session; fixTex slices again defensively at send.
         lastCompileError = String(res.log || ('status ' + res.status)).slice(-FIX_LOG_TAIL);
         const cause = extractLatexError(res.log);
         if (cause) {
-          setStatus('COMPILE ERROR: ' + cause + ' — or use Fix with LLM', 'err');
-          toast('Compile failed: ' + cause, 'err', 8000);
+          setStatus('Erro de compilação: ' + cause + ' — veja o Log ou use Corrigir com IA', 'err');
+          toast('Falhou: ' + cause, 'err', 8000);
         } else {
-          setStatus('COMPILE ERROR (status ' + res.status + ') — see log, or use Fix with LLM', 'err');
-          toast('Compile failed — see the log, or use Fix with LLM', 'err');
+          setStatus('Erro de compilação (status ' + res.status + ') — veja o Log ou use Corrigir com IA', 'err');
+          toast('Falhou — veja o Log ou use Corrigir com IA', 'err');
         }
         log(res.log || '');
       }
@@ -1818,6 +1891,7 @@
       clearInterval(timer);
       compileBusy = false;
       setBusy('btn-compile', false);
+      setCancelVisible(false);
       progress(false);
     }
   }
@@ -2387,11 +2461,11 @@
     $('btn-export').addEventListener('click', exportSections);
     $('section-select').addEventListener('change', (e) => switchSection(e.target.value));
 
-    $('btn-gen-cv').addEventListener('click', () => generate(genCvOut, 'btn-gen-cv', 'Generating CV_OUT.md'));
-    $('btn-gen-cover').addEventListener('click', () => generate(genCover, 'btn-gen-cover', 'Generating cover.md'));
-    $('btn-cv-to-tex').addEventListener('click', () => generate((s) => toTex(s, 'cv'), 'btn-cv-to-tex', 'Converting CV to LaTeX'));
-    $('btn-cover-to-tex').addEventListener('click', () => generate((s) => toTex(s, 'cover'), 'btn-cover-to-tex', 'Converting cover to LaTeX'));
-    $('btn-fix-tex').addEventListener('click', () => generate(fixTex, 'btn-fix-tex', 'Fixing LaTeX'));
+    $('btn-gen-cv').addEventListener('click', () => generate(genCvOut, 'btn-gen-cv', 'Gerando CV_OUT.md'));
+    $('btn-gen-cover').addEventListener('click', () => generate(genCover, 'btn-gen-cover', 'Gerando cover.md'));
+    $('btn-cv-to-tex').addEventListener('click', () => generate((s) => toTex(s, 'cv'), 'btn-cv-to-tex', 'Convertendo CV p/ LaTeX'));
+    $('btn-cover-to-tex').addEventListener('click', () => generate((s) => toTex(s, 'cover'), 'btn-cover-to-tex', 'Convertendo cover p/ LaTeX'));
+    $('btn-fix-tex').addEventListener('click', () => generate(fixTex, 'btn-fix-tex', 'Corrigindo LaTeX'));
     $('btn-compile').addEventListener('click', compilePdf);
     $('btn-log').addEventListener('click', () => showLog($('log').hidden));
     // NOTE: #btn-tex-toggle was removed from the layout redesign.
@@ -2431,9 +2505,14 @@
       },
     });
 
+    const cancelBtn = $('btn-cancel-op');
+    if (cancelBtn) cancelBtn.addEventListener('click', cancelCurrentOp);
     goTo(1);
     if (!active()) $('step1-empty').style.display = 'block';
-    setStatus('Ready', 'ok');
+    setStatus('Pronto', 'ok');
+    setEngineStatus('Motor PDF: carregando…');
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(prewarmEngine, { timeout: 3000 });
+    else setTimeout(prewarmEngine, 1500);
     saveAll();
     /* The seed runs after the wiring. A slow data file must not stop the
      * app from working, and the user must be able to type at once. */
