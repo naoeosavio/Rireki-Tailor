@@ -50,7 +50,7 @@ Profissional com mais de 5 anos de experiência em gestão de produtos e marketi
 \\vspace{4pt}
 \\textbf{Analista de Marketing Pleno} \\hfill \\textit{Inovação Digital | 2019 -- 2022}
 \\begin{itemize}
-  \\item Gerenciou orçamento mensal de R$ 80k com ROI sustentado superior a 4.2x.
+  \\item Gerenciou orçamento mensal de R\\$ 80k com ROI sustentado superior a 4.2x.
   \\item Coordenou a estratégia de SEO resultando em crescimento orgânico de 120\\% no tráfego qualificado.
 \\end{itemize}
 

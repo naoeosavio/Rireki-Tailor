@@ -8,6 +8,7 @@
     "serve": "node src/scripts/serve.js --port 8080",
     "test": "node test/smoke.js",
     "test:e2e": "node test/e2e.js",
+    "test:fonts": "node test/fonts_test.js",
     "test:store": "node test/store_test.js",
     "test:fixtex": "node test/fixtex_test.js",
     "test:serve": "node test/serve_audit.js",
